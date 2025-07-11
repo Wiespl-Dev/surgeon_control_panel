@@ -1,18 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'package:share_plus/share_plus.dart';
 import 'package:surgeon_control_panel/screen/feather/allcctv/allcctv.dart';
-import 'package:surgeon_control_panel/screen/message_server/messageserver.dart';
 
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import 'package:http/http.dart' as http;
-
-import 'package:path_provider/path_provider.dart';
 
 class VideoSwitcherScreen extends StatefulWidget {
   const VideoSwitcherScreen({super.key});
@@ -130,23 +126,23 @@ class _VideoSwitcherScreenState extends State<VideoSwitcherScreen> {
       _lastSid = null;
     });
 
-    final response = await TwilioService.sendWhatsAppMessage(
-      phoneNumber: '918075613583',
-      message: _messageController.text,
-    );
+    // final response = await TwilioService.sendWhatsAppMessage(
+    //   phoneNumber: '918075613583',
+    //   message: _messageController.text,
+    // );
 
-    setState(() {
-      _isSending = false;
-      if (response['success'] == true) {
-        _lastStatus = 'Message sent successfully!';
-        _lastSid = response['sid'];
-      } else {
-        _lastStatus =
-            response['error'] ??
-            response['message'] ??
-            'Failed to send message';
-      }
-    });
+    // setState(() {
+    //   _isSending = false;
+    //   if (response['success'] == true) {
+    //     _lastStatus = 'Message sent successfully!';
+    //     _lastSid = response['sid'];
+    //   } else {
+    //     _lastStatus =
+    //         response['error'] ??
+    //         response['message'] ??
+    //         'Failed to send message';
+    //   }
+    // });
 
     _showSnackBar(_lastStatus!);
     if (_lastSid != null) {
