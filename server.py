@@ -5,7 +5,7 @@ from flask_cors import CORS
 app = Flask(__name__)
 CORS(app)  # Allow requests from Flutter if needed
 
-host = "192.168.1.103"
+host = "192.168.0.201"
 port = 4455
 password = "helloa"
 

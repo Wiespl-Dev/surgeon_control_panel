@@ -84,17 +84,17 @@ async def start_http_server():
     app.add_routes([web.get('/info', http_info_handler)])
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, '192.168.0.100', 8080)  # Changed to specific IP
+    site = web.TCPSite(runner, '0.0.0.0', 8081)  # <-- Changed to 0.0.0.0 for HTTP
     await site.start()
-    logger.info("HTTP server running at http://192.168.0.100:8081/info")
+    logger.info("HTTP server running at http://192.168.0.43:8081/info")
 
 # ========== Main Server ==========
 async def main():
-    logger.info("WebSocket server starting on ws://192.168.0.100:8080")  # Updated IP in log
+    logger.info("WebSocket server starting on ws://0.0.0.0:8080")  # <-- Log updated
     try:
         async with websockets.serve(
             handler,
-            "192.168.0.100",  # Changed to specific IP
+            "0.0.0.0",  # <-- Changed to 0.0.0.0 for WebSocket
             8080,
             ping_interval=20,     # keep-alive
             ping_timeout=10
