@@ -5,7 +5,9 @@
 list(APPEND FLUTTER_PLUGIN_LIST
   connectivity_plus
   flutter_inappwebview_windows
+  flutter_localization
   flutter_webrtc
+  permission_handler_windows
   share_plus
   url_launcher_windows
 )

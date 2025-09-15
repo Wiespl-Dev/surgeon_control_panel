@@ -139,8 +139,9 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: Colors.teal.shade100,
-                borderRadius:
-                    const BorderRadius.vertical(top: Radius.circular(20)),
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(20),
+                ),
                 boxShadow: const [
                   BoxShadow(
                     color: Colors.black26,

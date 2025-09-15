@@ -1,12 +1,55 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
 import 'package:surgeon_control_panel/provider/stopwatch_provider.dart';
 import 'package:surgeon_control_panel/screen/home.dart';
 import 'package:video_player/video_player.dart';
 
-// List<CameraDescription>? cameras;
+// Localization Service
+class LocalizationService extends Translations {
+  LocalizationService._();
+  static final LocalizationService instance = LocalizationService._();
+
+  final Map<String, Map<String, String>> _translations = {};
+  Locale _locale = const Locale('en');
+
+  Future<void> init() async {
+    try {
+      for (final lang in ['en', 'hi', 'ar']) {
+        final jsonStr = await rootBundle.loadString(
+          'assets/la/$lang.json',
+        ); //assets\la\ar.json
+        final Map<String, dynamic> data = json.decode(jsonStr);
+        _translations[lang] = data.map((k, v) => MapEntry(k, v.toString()));
+      }
+    } catch (e) {
+      debugPrint('Error loading translations: $e');
+      _translations['en'] = {};
+      _translations['hi'] = {};
+      _translations['ar'] = {};
+    }
+  }
+
+  void setLocale(Locale locale) {
+    _locale = locale;
+    Get.updateLocale(locale);
+  }
+
+  Locale get locale => _locale;
+
+  @override
+  Map<String, Map<String, String>> get keys => _translations;
+
+  String t(String key, {Map<String, String>? params}) {
+    var text = _translations[_locale.languageCode]?[key] ?? key;
+    params?.forEach((p, v) => text = text.replaceAll('{$p}', v));
+    return text;
+  }
+}
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -14,21 +57,39 @@ Future<void> main() async {
     DeviceOrientation.landscapeRight,
     DeviceOrientation.landscapeLeft,
   ]);
-  // cameras = await availableCameras();
+
+  // Initialize localization
+  await LocalizationService.instance.init();
+
   runApp(
     MultiProvider(
       providers: [ChangeNotifierProvider(create: (_) => StopwatchProvider())],
-      child: MyApp(),
+      child: const MyApp(),
     ),
   );
 }
 
 class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
   @override
   Widget build(BuildContext context) {
-    return const GetMaterialApp(
+    return GetMaterialApp(
       debugShowCheckedModeBanner: false,
-      home: SplashScreen(),
+      locale: LocalizationService.instance.locale,
+      fallbackLocale: const Locale('en'),
+      translations: LocalizationService.instance,
+      supportedLocales: const [
+        Locale('en'), // English
+        Locale('hi'), // Hindi
+        Locale('ar'), // Arabic
+      ],
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+      ],
+      home: const SplashScreen(),
     );
   }
 }
@@ -55,7 +116,6 @@ class _SplashScreenState extends State<SplashScreen> {
 
     _controller.addListener(() {
       if (_controller.value.position == _controller.value.duration) {
-        // Video ended
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (context) => const Home()),

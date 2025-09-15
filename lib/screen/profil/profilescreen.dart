@@ -10,6 +10,8 @@ class ProfilePage1 extends StatefulWidget {
 
 class _ProfilePage1State extends State<ProfilePage1> {
   Color avatarBorderColor = Colors.green;
+  Color topGradientColor = const Color.fromARGB(255, 112, 143, 214);
+  Color bottomGradientColor = const Color.fromARGB(255, 157, 102, 228);
 
   void _showColorPicker() {
     showDialog(
@@ -20,7 +22,17 @@ class _ProfilePage1State extends State<ProfilePage1> {
           child: ColorPicker(
             pickerColor: avatarBorderColor,
             onColorChanged: (color) {
-              setState(() => avatarBorderColor = color);
+              setState(() {
+                avatarBorderColor = color;
+                // Update gradient colors based on the selected color
+                topGradientColor = color.withOpacity(0.7);
+                bottomGradientColor = Color.fromARGB(
+                  255,
+                  (color.red * 0.7).round(),
+                  (color.green * 0.7).round(),
+                  (color.blue * 0.7).round(),
+                ).withOpacity(0.9);
+              });
             },
             showLabel: true,
             pickerAreaHeightPercent: 0.8,
@@ -41,14 +53,11 @@ class _ProfilePage1State extends State<ProfilePage1> {
     return Scaffold(
       body: Container(
         width: double.infinity,
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [
-              Color.fromARGB(255, 112, 143, 214),
-              Color.fromARGB(255, 157, 102, 228),
-            ],
+            colors: [topGradientColor, bottomGradientColor],
           ),
         ),
         child: Column(
@@ -62,10 +71,8 @@ class _ProfilePage1State extends State<ProfilePage1> {
                   children: [
                     Text(
                       "Sourav Cv",
-                      style:
-                          Theme.of(context).textTheme.headlineMedium?.copyWith(
-                                fontWeight: FontWeight.bold,
-                              ),
+                      style: Theme.of(context).textTheme.headlineMedium
+                          ?.copyWith(fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 16),
                     Row(
@@ -150,8 +157,11 @@ class _TopPortion extends StatelessWidget {
             padding: const EdgeInsets.all(18.0),
             child: IconButton(
               onPressed: () => Navigator.pop(context),
-              icon: const Icon(Icons.arrow_back_ios_rounded,
-                  color: Colors.white, size: 25),
+              icon: const Icon(
+                Icons.arrow_back_ios_rounded,
+                color: Colors.white,
+                size: 25,
+              ),
             ),
           ),
         ),
@@ -193,18 +203,18 @@ class _ProfileInfoRow extends StatelessWidget {
   }
 
   Widget _singleItem(BuildContext context, ProfileInfoItem item) => Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Text(
-              item.value.toString(),
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
-            ),
-          ),
-          Text(item.title, style: Theme.of(context).textTheme.bodySmall),
-        ],
-      );
+    mainAxisAlignment: MainAxisAlignment.center,
+    children: [
+      Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: Text(
+          item.value.toString(),
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
+        ),
+      ),
+      Text(item.title, style: Theme.of(context).textTheme.bodySmall),
+    ],
+  );
 }
 
 class ProfileInfoItem {
