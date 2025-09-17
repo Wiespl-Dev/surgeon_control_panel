@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:surgeon_control_panel/main.dart';
 
 class HospitalStoreScreen extends StatefulWidget {
   @override
@@ -386,13 +387,13 @@ class _HospitalStoreScreenState extends State<HospitalStoreScreen> {
 
         elevation: 0,
         actions: [
-          IconButton(
-            icon: Icon(Icons.add, color: Colors.white, size: 22),
-            onPressed: () {
-              // Add new item functionality
-              _showAddItemDialog();
-            },
-          ),
+          // IconButton(
+          //   icon: Icon(Icons.add, color: Colors.white, size: 22),
+          //   onPressed: () {
+          //     // Add new item functionality
+          //     _showAddItemDialog();
+          //   },
+          // ),
         ],
       ),
       body: _showItemDetails && _selectedItem != null

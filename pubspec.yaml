@@ -69,7 +69,7 @@ dependencies:
   file_picker: ^10.3.1
   flutter_screen_recording: ^2.0.24
   percent_indicator: ^4.2.5
-  fl_chart: ^1.0.0
+  fl_chart: ^0.69.0
   android_intent_plus: ^5.3.1
   url_launcher: ^6.3.2
   # image_gallery_saver: ^2.0.3
@@ -105,4 +105,5 @@ flutter:
     - assets/la/ar.json
     - assets/la/hi.json
     - assets/la/en.json
+    - assets/bgi.jpg
 

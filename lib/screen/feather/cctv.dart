@@ -1039,7 +1039,7 @@ class _VideoSwitcherScreenState extends State<VideoSwitcherScreen> {
     "https://www.youtube.com/watch?v=lp4eRla1vFg", // Shoulder surgery
   ];
 
-  late YoutubePlayerController _controller;
+  // late YoutubePlayerController _controller;
 
   int selectedVideoIndex = 0;
   final String baseUrl = 'http://192.168.0.43:5000'; // Your local server IP
@@ -1148,24 +1148,6 @@ class _VideoSwitcherScreenState extends State<VideoSwitcherScreen> {
       _lastStatus = null;
       _lastSid = null;
     });
-
-    // final response = await TwilioService.sendWhatsAppMessage(
-    //   phoneNumber: '918075613583',
-    //   message: _messageController.text,
-    // );
-
-    // setState(() {
-    //   _isSending = false;
-    //   if (response['success'] == true) {
-    //     _lastStatus = 'Message sent successfully!';
-    //     _lastSid = response['sid'];
-    //   } else {
-    //     _lastStatus =
-    //         response['error'] ??
-    //         response['message'] ??
-    //         'Failed to send message';
-    //   }
-    // });
 
     _showSnackBar(_lastStatus!);
     if (_lastSid != null) {
