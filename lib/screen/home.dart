@@ -7,13 +7,13 @@ import 'package:get/get.dart';
 import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import 'package:stop_watch_timer/stop_watch_timer.dart';
+import 'package:surgeon_control_panel/main.dart';
 import 'package:surgeon_control_panel/patient%20info/clean/clean_pro.dart';
 import 'package:surgeon_control_panel/patient%20info/dashboard/dashboard.dart';
 import 'package:surgeon_control_panel/patient%20info/dashboard/store/storeitems.dart';
 import 'package:surgeon_control_panel/provider/stopwatch_provider.dart';
 import 'package:surgeon_control_panel/screen/feather/cctv.dart';
 import 'package:surgeon_control_panel/screen/feather/clock/clock.dart';
-// import 'package:surgeon_control_panel/screen/feather/dicomeview.dart';
 import 'package:surgeon_control_panel/screen/feather/light.dart';
 import 'package:surgeon_control_panel/screen/feather/mgps.dart';
 import 'package:surgeon_control_panel/screen/feather/music.dart';
@@ -23,8 +23,6 @@ import 'package:surgeon_control_panel/screen/feather/temp.dart';
 import 'package:surgeon_control_panel/screen/feather/timer.dart';
 import 'package:surgeon_control_panel/screen/profil/profilescreen.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
-
-// Add this import for phone functionality
 import 'package:url_launcher/url_launcher.dart';
 
 class Home extends StatefulWidget {
@@ -251,7 +249,7 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
           duration: const Duration(milliseconds: 400),
         );
         break;
-      case 9: // PIS
+      case 9: // PIS'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
         Get.to(
           () => DashboardScreen(),
           transition: Transition.rightToLeft,
@@ -639,20 +637,21 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
                       );
                     },
                   ),
-                  IconButton(
-                    icon: const Icon(
-                      Icons.settings,
-                      size: 42,
-                      color: Colors.white,
-                    ),
-                    onPressed: () {
-                      Get.to(
-                        () => ProfilePage1(),
-                        transition: Transition.rightToLeft,
-                        duration: const Duration(milliseconds: 400),
-                      );
-                    },
-                  ),
+
+                  // IconButton(
+                  //   icon: const Icon(
+                  //     Icons.settings,
+                  //     size: 42,
+                  //     color: Colors.white,
+                  //   ),
+                  //   onPressed: () {
+                  //     Get.to(
+                  //       () => ProfilePage1(),
+                  //       transition: Transition.rightToLeft,
+                  //       duration: const Duration(milliseconds: 400),
+                  //     );
+                  //   },
+                  // ),
                 ],
               ),
             ),

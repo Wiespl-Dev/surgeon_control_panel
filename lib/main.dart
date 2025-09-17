@@ -1,15 +1,20 @@
 import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
-import 'package:surgeon_control_panel/provider/stopwatch_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:surgeon_control_panel/patient%20info/dashboard/store/storeitems.dart';
+import 'package:surgeon_control_panel/screen/cssd.dart';
+import 'package:surgeon_control_panel/screen/entrance.dart';
 import 'package:surgeon_control_panel/screen/home.dart';
 import 'package:video_player/video_player.dart';
+import 'provider/stopwatch_provider.dart';
 
-// Localization Service
+/// ==========================
+/// Localization Service
+/// ==========================
 class LocalizationService extends Translations {
   LocalizationService._();
   static final LocalizationService instance = LocalizationService._();
@@ -20,9 +25,7 @@ class LocalizationService extends Translations {
   Future<void> init() async {
     try {
       for (final lang in ['en', 'hi', 'ar']) {
-        final jsonStr = await rootBundle.loadString(
-          'assets/la/$lang.json',
-        ); //assets\la\ar.json
+        final jsonStr = await rootBundle.loadString('assets/la/$lang.json');
         final Map<String, dynamic> data = json.decode(jsonStr);
         _translations[lang] = data.map((k, v) => MapEntry(k, v.toString()));
       }
@@ -51,6 +54,9 @@ class LocalizationService extends Translations {
   }
 }
 
+/// ==========================
+/// MAIN
+/// ==========================
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await SystemChrome.setPreferredOrientations([
@@ -58,7 +64,6 @@ Future<void> main() async {
     DeviceOrientation.landscapeLeft,
   ]);
 
-  // Initialize localization
   await LocalizationService.instance.init();
 
   runApp(
@@ -72,28 +77,61 @@ Future<void> main() async {
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
+  Future<Widget> _getInitialScreen() async {
+    final prefs = await SharedPreferences.getInstance();
+    final code = prefs.getString("uniqueCode");
+    final mode = prefs.getString("mode");
+
+    if (code != null && mode != null) {
+      /// Return the appropriate screen based on the saved mode
+
+      switch (mode) {
+        case 'Main':
+          return Home();
+        case 'Entrance':
+          return ORStatusMonitor();
+        case 'Store':
+          return HospitalStoreScreen();
+        case 'CSSD':
+          return CssdApp();
+        default:
+          return Home();
+      }
+    }
+    return const SplashScreen();
+  }
+
   @override
   Widget build(BuildContext context) {
-    return GetMaterialApp(
-      debugShowCheckedModeBanner: false,
-      locale: LocalizationService.instance.locale,
-      fallbackLocale: const Locale('en'),
-      translations: LocalizationService.instance,
-      supportedLocales: const [
-        Locale('en'), // English
-        Locale('hi'), // Hindi
-        Locale('ar'), // Arabic
-      ],
-      localizationsDelegates: const [
-        GlobalMaterialLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-      ],
-      home: const SplashScreen(),
+    return FutureBuilder<Widget>(
+      future: _getInitialScreen(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const MaterialApp(
+            home: Scaffold(body: Center(child: CircularProgressIndicator())),
+          );
+        }
+        return GetMaterialApp(
+          debugShowCheckedModeBanner: false,
+          locale: LocalizationService.instance.locale,
+          fallbackLocale: const Locale('en'),
+          translations: LocalizationService.instance,
+          supportedLocales: const [Locale('en'), Locale('hi'), Locale('ar')],
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+          ],
+          home: snapshot.data!,
+        );
+      },
     );
   }
 }
 
+/// ==========================
+/// Splash Screen
+/// ==========================
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
 
@@ -118,7 +156,7 @@ class _SplashScreenState extends State<SplashScreen> {
       if (_controller.value.position == _controller.value.duration) {
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (context) => const Home()),
+          MaterialPageRoute(builder: (context) => const LoginPage()),
         );
       }
     });
@@ -142,6 +180,185 @@ class _SplashScreenState extends State<SplashScreen> {
               ),
             )
           : const Center(child: CircularProgressIndicator()),
+    );
+  }
+}
+
+/// ==========================
+/// Login Page
+/// ==========================
+class LoginPage extends StatefulWidget {
+  const LoginPage({super.key});
+
+  @override
+  State<LoginPage> createState() => _LoginPageState();
+}
+
+class _LoginPageState extends State<LoginPage> {
+  final TextEditingController _codeController = TextEditingController();
+  String? _selectedMode;
+
+  final List<String> _modes = ['Main', 'Entrance', 'Store', 'CSSD'];
+
+  Future<void> _onLogin() async {
+    if (_codeController.text.isEmpty || _selectedMode == null) {
+      Get.snackbar(
+        "Error",
+        "Please enter code and select mode",
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Colors.red.shade100,
+      );
+      return;
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString("uniqueCode", _codeController.text);
+    await prefs.setString("mode", _selectedMode!);
+
+    // Navigate to different screens based on the selected mode
+    Widget nextScreen;
+    switch (_selectedMode) {
+      case 'Main':
+        nextScreen = Home();
+        break;
+      case 'Entrance':
+        nextScreen = ORStatusMonitor();
+        break;
+      case 'Store':
+        nextScreen = HospitalStoreScreen();
+        break;
+      case 'CSSD':
+        nextScreen = CssdApp();
+        break;
+      default:
+        nextScreen = Home();
+    }
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (context) => nextScreen),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          // Background image
+          Image.asset("assets/bgi.jpg", fit: BoxFit.cover),
+
+          // Semi-transparent overlay for readability
+          Container(color: Colors.black.withOpacity(0.4)),
+
+          // Login Card
+          Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: Card(
+                color: Colors.white.withOpacity(0.4),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                elevation: 12,
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Container(
+                    width: MediaQuery.of(context).size.width * 0.4,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text(
+                          "LOGIN WITH WIESPL",
+                          style: TextStyle(
+                            fontSize: 30,
+                            fontWeight: FontWeight.bold,
+                            color: Color.fromARGB(184, 255, 255, 255),
+                          ),
+                        ),
+                        const SizedBox(height: 30),
+
+                        // Unique Code Field
+                        TextField(
+                          controller: _codeController,
+                          decoration: InputDecoration(
+                            prefixIcon: const Icon(
+                              Icons.vpn_key,
+                              color: Colors.blueGrey,
+                            ),
+                            filled: true,
+                            fillColor: const Color.fromARGB(142, 255, 255, 255),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+
+                        // Mode Dropdown
+                        DropdownButtonFormField<String>(
+                          value: _selectedMode,
+                          items: _modes
+                              .map(
+                                (mode) => DropdownMenuItem(
+                                  value: mode,
+                                  child: Text(mode),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: (val) =>
+                              setState(() => _selectedMode = val),
+                          decoration: InputDecoration(
+                            prefixIcon: const Icon(
+                              Icons.settings_applications_outlined,
+                              color: Colors.blueGrey,
+                            ),
+                            filled: true,
+                            fillColor: const Color.fromARGB(158, 255, 255, 255),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 30),
+
+                        // Login Button
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton(
+                            onPressed: _onLogin,
+                            style: ElevatedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              backgroundColor: const Color.fromARGB(
+                                234,
+                                0,
+                                0,
+                                0,
+                              ),
+                            ),
+                            child: const Text(
+                              "Login",
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Color.fromARGB(221, 255, 255, 255),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
