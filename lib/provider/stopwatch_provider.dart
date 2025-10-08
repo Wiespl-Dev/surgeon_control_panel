@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:just_audio/just_audio.dart';
 import 'package:stop_watch_timer/stop_watch_timer.dart';
 
 class StopwatchProvider extends ChangeNotifier {
-  final StopWatchTimer _stopWatchTimer =
-      StopWatchTimer(mode: StopWatchMode.countUp);
-
+  final StopWatchTimer _stopWatchTimer = StopWatchTimer(
+    mode: StopWatchMode.countUp,
+  );
+  final AudioPlayer alertPlayer = AudioPlayer();
   bool _isRunning = false;
   List<String> _lapTimes = [];
 

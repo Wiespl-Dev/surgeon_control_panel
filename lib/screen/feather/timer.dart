@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:stop_watch_timer/stop_watch_timer.dart';
-import 'package:surgeon_control_panel/provider/stopwatch_provider.dart'
-    show StopwatchProvider;
+import 'package:surgeon_control_panel/provider/stopwatch_provider.dart';
+
 // import 'package:test_pac/provider/stopwatch_provider.dart'
 //     show StopwatchProvider;
 

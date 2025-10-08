@@ -1,11 +1,17 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+// ignore: depend_on_referenced_packages
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
+// ignore: depend_on_referenced_packages
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:surgeon_control_panel/patient%20info/dashboard/store/storeitems.dart';
+import 'package:surgeon_control_panel/provider/audioProvider.dart';
+import 'package:surgeon_control_panel/provider/home_provider.dart';
+import 'package:surgeon_control_panel/provider/light_provider.dart';
+import 'package:surgeon_control_panel/provider/or_status_provider.dart';
 import 'package:surgeon_control_panel/screen/cssd.dart';
 import 'package:surgeon_control_panel/screen/entrance.dart';
 import 'package:surgeon_control_panel/screen/home.dart';
@@ -68,7 +74,13 @@ Future<void> main() async {
 
   runApp(
     MultiProvider(
-      providers: [ChangeNotifierProvider(create: (_) => StopwatchProvider())],
+      providers: [
+        ChangeNotifierProvider(create: (_) => StopwatchProvider()),
+        ChangeNotifierProvider(create: (_) => AudioProvider()),
+        ChangeNotifierProvider(create: (context) => HomeProvider()),
+        ChangeNotifierProvider(create: (context) => LightProvider()),
+        ChangeNotifierProvider(create: (context) => ORStatusProvider()),
+      ],
       child: const MyApp(),
     ),
   );
@@ -282,7 +294,14 @@ class _LoginPageState extends State<LoginPage> {
                         // Unique Code Field
                         TextField(
                           controller: _codeController,
+                          style: const TextStyle(
+                            color: Colors.black,
+                          ), // input text in black
                           decoration: InputDecoration(
+                            labelText: "Enter Unique Code", // label text
+                            labelStyle: const TextStyle(
+                              color: Colors.blueGrey,
+                            ), // optional label color
                             prefixIcon: const Icon(
                               Icons.vpn_key,
                               color: Colors.blueGrey,
@@ -294,22 +313,33 @@ class _LoginPageState extends State<LoginPage> {
                             ),
                           ),
                         ),
+
                         const SizedBox(height: 20),
 
                         // Mode Dropdown
                         DropdownButtonFormField<String>(
                           value: _selectedMode,
+                          style: const TextStyle(
+                            color: Colors.black,
+                          ), // selected text in black
                           items: _modes
                               .map(
                                 (mode) => DropdownMenuItem(
                                   value: mode,
-                                  child: Text(mode),
+                                  child: Text(
+                                    mode,
+                                    style: const TextStyle(
+                                      color: Colors.black,
+                                    ), // dropdown items in black
+                                  ),
                                 ),
                               )
                               .toList(),
                           onChanged: (val) =>
                               setState(() => _selectedMode = val),
                           decoration: InputDecoration(
+                            labelText: "Select Mode", // optional label
+                            labelStyle: const TextStyle(color: Colors.blueGrey),
                             prefixIcon: const Icon(
                               Icons.settings_applications_outlined,
                               color: Colors.blueGrey,
