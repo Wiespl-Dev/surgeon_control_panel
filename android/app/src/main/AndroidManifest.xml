@@ -20,7 +20,7 @@
         android:required="true" />
 
     <application
-        android:label="surgeon_control_panel"
+        android:label="WIESPL CONTROL PANEL"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true">

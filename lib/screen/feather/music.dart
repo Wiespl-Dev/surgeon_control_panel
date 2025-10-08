@@ -109,11 +109,15 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: const Color.fromARGB(255, 126, 163, 184),
+        backgroundColor: const Color(0xFF3D8A8F),
         elevation: 6,
         title: const Text(
           'My Music',
-          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 22),
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 22,
+            color: Colors.white,
+          ),
         ),
         centerTitle: true,
       ),
@@ -123,10 +127,8 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [
-              Color.fromARGB(255, 124, 162, 184),
-              Color.fromARGB(255, 191, 234, 234),
-            ],
+            // backgroundColor: const Color(0xFF3D8A8F),
+            colors: [Color(0xFF3D8A8F), Color(0xFF3D8A8F)],
           ),
         ),
         child: ListView.builder(
