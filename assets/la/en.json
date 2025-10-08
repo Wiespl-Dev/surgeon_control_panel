@@ -1,6 +1,6 @@
 {
-    "temp": "Temp: 00 °C",
-    "rh": "RH: 00 %",
+    "temp": "Temp",
+    "rh": "RH",
     "lighting": "Lighting",
     "dicom": "Dicom",
     "timer": "Timer",

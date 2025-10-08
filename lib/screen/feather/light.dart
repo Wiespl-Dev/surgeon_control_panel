@@ -1,637 +1,424 @@
 import 'dart:async';
-import 'dart:convert';
-
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import 'package:usb_serial/usb_serial.dart';
+import 'package:provider/provider.dart';
+import 'package:surgeon_control_panel/provider/light_provider.dart';
 
-class MyHomePage extends StatefulWidget {
+class LightIntensityPage extends StatefulWidget {
   @override
-  _MyHomePageState createState() => _MyHomePageState();
+  _LightIntensityPageState createState() => _LightIntensityPageState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  final String esp32Ip = "192.168.0.232"; // Change to your ESP32 IP
-  final TextEditingController _tempController = TextEditingController(
-    text: "25.0",
-  );
-  final TextEditingController _humController = TextEditingController(
-    text: "55.0",
-  );
-  final TextEditingController _ledNumController = TextEditingController(
-    text: "1",
-  );
-  final TextEditingController _ledValueController = TextEditingController(
-    text: "255",
-  );
-
-  String _response = "Not connected";
-  String _sensorData = "No data received";
-  double _currentTemp = 0.0;
-  double _currentHum = 0.0;
-  int _emptyGasCount = 0;
-  List<String> _emptyGases = [];
-  Timer? _sensorUpdateTimer;
-  Timer? _gasStatusTimer;
-  bool _isConnected = false;
+class _LightIntensityPageState extends State<LightIntensityPage> {
+  // USB communication
+  UsbPort? _port;
+  String _incomingBuffer = "";
+  StreamSubscription<dynamic>? _usbSubscription;
 
   @override
   void initState() {
     super.initState();
-    _startSensorUpdates();
-    _startGasStatusUpdates();
+    _initUsb();
   }
 
   @override
   void dispose() {
-    _sensorUpdateTimer?.cancel();
-    _gasStatusTimer?.cancel();
+    _usbSubscription?.cancel();
+    _port?.close();
     super.dispose();
   }
 
-  void _startSensorUpdates() {
-    _sensorUpdateTimer = Timer.periodic(Duration(seconds: 3), (timer) {
-      _getSensorData();
-    });
-  }
+  // USB Communication Methods
+  Future<void> _initUsb() async {
+    final lightProvider = Provider.of<LightProvider>(context, listen: false);
 
-  void _startGasStatusUpdates() {
-    _gasStatusTimer = Timer.periodic(Duration(seconds: 5), (timer) {
-      _getGasStatus();
-    });
-  }
-
-  Future<void> _sendCommand(String command) async {
     try {
-      final response = await http.post(
-        Uri.parse('http://$esp32Ip/api/command'),
-        headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8',
-        },
-        body: jsonEncode(<String, String>{'command': command}),
-      );
+      List<UsbDevice> devices = await UsbSerial.listDevices();
+      if (devices.isEmpty) {
+        lightProvider.updateConnectionStatus(false);
+        return;
+      }
 
-      if (response.statusCode == 200) {
-        setState(() {
-          _response = "Success: ${response.body}";
-          _isConnected = true;
-        });
+      UsbDevice device = devices.first;
+      _port = await device.create();
+      bool open = await _port!.open();
+
+      if (open) {
+        await _port!.setPortParameters(9600, 8, 1, 0);
+
+        // Cancel previous subscription if any
+        await _usbSubscription?.cancel();
+
+        _usbSubscription = _port!.inputStream?.listen(_onDataReceived);
+        lightProvider.updateConnectionStatus(true);
+        _sendCommand("STATUS");
       } else {
-        setState(() {
-          _response = "Error: ${response.statusCode}";
-          _isConnected = false;
-        });
+        lightProvider.updateConnectionStatus(false);
       }
     } catch (e) {
-      setState(() {
-        _response = "Exception: $e";
-        _isConnected = false;
-      });
+      debugPrint("USB Error in LightIntensityPage: $e");
+      lightProvider.updateConnectionStatus(false);
     }
   }
 
-  Future<void> _getSensorData() async {
-    try {
-      final response = await http.get(
-        Uri.parse('http://$esp32Ip/api/sensor-data'),
-        headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8',
-        },
-      );
+  void _onDataReceived(Uint8List data) {
+    String str = String.fromCharCodes(data);
+    _incomingBuffer += str;
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        setState(() {
-          _sensorData =
-              "Temp: ${data['temperature']}°C, Hum: ${data['humidity']}%";
-          _currentTemp = data['temperature']?.toDouble() ?? 0.0;
-          _currentHum = data['humidity']?.toDouble() ?? 0.0;
-          _isConnected = true;
-        });
-      } else {
-        setState(() {
-          _sensorData = "Error: ${response.statusCode}";
-          _isConnected = false;
-        });
+    if (_incomingBuffer.contains('\n') ||
+        (_incomingBuffer.startsWith('{') && _incomingBuffer.contains('}'))) {
+      List<String> messages = _incomingBuffer.split('\n');
+      for (int i = 0; i < messages.length - 1; i++) {
+        String completeMessage = messages[i].trim();
+        if (completeMessage.isNotEmpty) {
+          _processCompleteMessage(completeMessage);
+        }
       }
-    } catch (e) {
-      setState(() {
-        _sensorData = "Exception: $e";
-        _isConnected = false;
-      });
+      _incomingBuffer = messages.last;
+    }
+
+    if (_incomingBuffer.startsWith('{') && _incomingBuffer.endsWith('}')) {
+      _processCompleteMessage(_incomingBuffer);
+      _incomingBuffer = "";
     }
   }
 
-  Future<void> _getGasStatus() async {
-    try {
-      final response = await http.get(
-        Uri.parse('http://$esp32Ip/api/gas-status'),
-        headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8',
-        },
-      );
+  void _processCompleteMessage(String completeMessage) {
+    _parseStructuredData(completeMessage);
+  }
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        setState(() {
-          _emptyGasCount = data['empty_gas_count'] ?? 0;
-          _emptyGases = List<String>.from(data['empty_gases'] ?? []);
-          _isConnected = true;
-        });
+  void _parseStructuredData(String data) {
+    final lightProvider = Provider.of<LightProvider>(context, listen: false);
+
+    try {
+      if (data.startsWith('{') && data.endsWith('}')) {
+        String content = data.substring(1, data.length - 1);
+        List<String> pairs = content.split(',');
+        Map<String, dynamic> parsedData = {};
+
+        for (String pair in pairs) {
+          List<String> keyValue = pair.split(':');
+          if (keyValue.length == 2) {
+            String key = keyValue[0].trim();
+            String value = keyValue[1].trim();
+            parsedData[key] = value;
+          }
+        }
+
+        lightProvider.parseStructuredData(parsedData);
       }
     } catch (e) {
-      setState(() {
-        _emptyGasCount = 0;
-        _emptyGases = [];
-      });
+      debugPrint("Error parsing light data: $e");
     }
   }
 
-  Future<void> _getStatus() async {
-    try {
-      final response = await http.get(
-        Uri.parse('http://$esp32Ip/api/status'),
-        headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8',
-        },
-      );
+  void _sendCommand(String cmd) {
+    final lightProvider = Provider.of<LightProvider>(context, listen: false);
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        setState(() {
-          _response =
-              "Status: Temp: ${data['temperature']}°C, Hum: ${data['humidity']}%";
-          _currentTemp = data['temperature']?.toDouble() ?? 0.0;
-          _currentHum = data['humidity']?.toDouble() ?? 0.0;
-          _emptyGasCount = data['empty_gas_count'] ?? 0;
-          _emptyGases = List<String>.from(data['empty_gases'] ?? []);
-          _isConnected = true;
-        });
-      } else {
-        setState(() {
-          _response = "Error: ${response.statusCode}";
-          _isConnected = false;
-        });
-      }
-    } catch (e) {
-      setState(() {
-        _response = "Exception: $e";
-        _isConnected = false;
-      });
+    if (_port != null && lightProvider.isConnected) {
+      String commandToSend = cmd + "\n";
+      _port!.write(Uint8List.fromList(commandToSend.codeUnits));
+      debugPrint("Light Page Sent: $commandToSend");
     }
   }
 
-  Future<void> _testConnection() async {
-    try {
-      final response = await http.get(
-        Uri.parse('http://$esp32Ip/'),
-        headers: <String, String>{'Content-Type': 'text/plain'},
-      );
+  void _sendCompleteStructure() {
+    final lightProvider = Provider.of<LightProvider>(context, listen: false);
 
-      if (response.statusCode == 200) {
-        setState(() {
-          _response = "Connected: ${response.body}";
-          _isConnected = true;
-        });
-        // Refresh all data after successful connection
-        _getSensorData();
-        _getGasStatus();
-      } else {
-        setState(() {
-          _response = "Error: ${response.statusCode}";
-          _isConnected = false;
-        });
-      }
-    } catch (e) {
-      setState(() {
-        _response = "Connection failed: $e";
-        _isConnected = false;
-      });
+    if (_port != null && lightProvider.isConnected) {
+      String command = lightProvider.generateCommandStructure();
+      _sendCommand(command);
     }
+  }
+
+  void _reconnectUsb() {
+    _initUsb();
+  }
+
+  Widget _buildLightControlItem({
+    required String title,
+    required bool isOn,
+    required double intensity,
+    required ValueChanged<bool> onToggle,
+    ValueChanged<double>? onIntensityChange,
+    bool showSlider = true,
+  }) {
+    final Color trackColor = isOn
+        ? const Color.fromARGB(255, 219, 247, 64)
+        : Colors.grey[400]!;
+    final Color thumbColor = isOn ? Colors.white : Colors.white;
+
+    return Column(
+      children: [
+        // Title and Switch/Toggle (Row 1)
+        Padding(
+          padding: const EdgeInsets.only(
+            left: 20.0,
+            right: 16.0,
+            top: 10.0,
+            bottom: 4.0,
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              Switch(
+                value: isOn,
+                onChanged: onToggle,
+                activeColor: trackColor,
+                activeTrackColor: trackColor.withOpacity(0.5),
+                inactiveThumbColor: thumbColor,
+                inactiveTrackColor: Colors.grey[600],
+              ),
+            ],
+          ),
+        ),
+
+        // Slider (Row 2, only for individual lights)
+        if (showSlider)
+          Padding(
+            padding: const EdgeInsets.only(
+              left: 16.0,
+              right: 16.0,
+              top: 4.0,
+              bottom: 8.0,
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      activeTrackColor: Colors.white,
+                      inactiveTrackColor: Colors.white54,
+                      thumbColor: Colors.white,
+                      overlayColor: Colors.white12,
+                      trackHeight: 6.0,
+                      thumbShape: const RoundSliderThumbShape(
+                        enabledThumbRadius: 8.0,
+                      ),
+                    ),
+                    child: Slider(
+                      value: intensity,
+                      min: 0,
+                      max: 100,
+                      divisions: 100,
+                      onChanged: onIntensityChange,
+                      onChangeEnd: (val) {
+                        _sendCompleteStructure();
+                      },
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  "${intensity.round()}%".padLeft(4, ' '),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+        // Custom Divider Line
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16.0),
+          child: Divider(color: Colors.white38, height: 1, thickness: 0.5),
+        ),
+      ],
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Gas Monitoring Control'),
-        backgroundColor: _isConnected ? Colors.green : Colors.red,
-        actions: [
-          IconButton(icon: Icon(Icons.refresh), onPressed: _testConnection),
-        ],
-      ),
-      body: SingleChildScrollView(
-        padding: EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            // Connection Status
-            Card(
-              child: Padding(
-                padding: EdgeInsets.all(16.0),
-                child: Column(
-                  children: [
-                    Text(
-                      'Connection Status',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
+    final lightProvider = Provider.of<LightProvider>(context);
+
+    return Material(
+      color: const Color(0xFF3D8A8F),
+      child: Center(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final double modalWidth = constraints.maxWidth * 0.9;
+            final double modalHeight = constraints.maxHeight * 0.9;
+
+            return Container(
+              width: modalWidth.clamp(300.0, 600.0),
+              height: modalHeight.clamp(400.0, 800.0),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [
+                    Color.fromARGB(255, 40, 123, 131),
+                    Color.fromARGB(255, 39, 83, 87),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(20.0),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.5),
+                    blurRadius: 20,
+                    spreadRadius: 5,
+                  ),
+                ],
+              ),
+              child: Column(
+                children: [
+                  // HEADER: Title and Close Button
+                  Padding(
+                    padding: const EdgeInsets.only(
+                      top: 16.0,
+                      left: 20.0,
+                      right: 16.0,
+                      bottom: 8.0,
                     ),
-                    SizedBox(height: 10),
-                    Row(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Icon(
-                          _isConnected
-                              ? Icons.wifi
-                              : Icons
-                                    .wifi_off, // FIXED: Changed Icomponents to Icons
-                          color: _isConnected ? Colors.green : Colors.red,
-                        ),
-                        SizedBox(width: 10),
-                        Text(
-                          _isConnected ? 'Connected to ESP32' : 'Disconnected',
+                        const Text(
+                          "Light",
                           style: TextStyle(
-                            color: _isConnected ? Colors.green : Colors.red,
+                            color: Colors.white,
+                            fontSize: 28,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
-                      ],
-                    ),
-                    SizedBox(height: 10),
-                    ElevatedButton(
-                      onPressed: _testConnection,
-                      child: Text('Test Connection'),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            // Current Sensor Data
-            Card(
-              child: Padding(
-                padding: EdgeInsets.all(16.0),
-                child: Column(
-                  children: [
-                    Text(
-                      'Current Sensor Data',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    SizedBox(height: 10),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
-                      children: [
-                        Column(
+                        // Connection status and close button
+                        Row(
                           children: [
-                            Text('Temperature', style: TextStyle(fontSize: 16)),
-                            Text(
-                              '${_currentTemp.toStringAsFixed(1)}°C',
-                              style: TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
+                            // USB Connection Status
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: lightProvider.isConnected
+                                    ? Colors.green
+                                    : Colors.red,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                lightProvider.isConnected
+                                    ? "USB Connected"
+                                    : "USB Disconnected",
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            // Refresh button
+                            IconButton(
+                              onPressed: _reconnectUsb,
+                              icon: const Icon(
+                                Icons.refresh,
+                                color: Colors.white,
+                                size: 20,
+                              ),
+                            ),
+                            // Close button
+                            IconButton(
+                              onPressed: () {
+                                Navigator.pop(context);
+                              },
+                              icon: const Icon(
+                                Icons.close,
+                                color: Colors.white,
+                                size: 28,
                               ),
                             ),
                           ],
                         ),
-                        Column(
-                          children: [
-                            Text('Humidity', style: TextStyle(fontSize: 16)),
-                            Text(
-                              '${_currentHum.toStringAsFixed(1)}%',
-                              style: TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
                       ],
                     ),
-                    SizedBox(height: 10),
-                    Text(_sensorData, style: TextStyle(fontSize: 14)),
-                  ],
-                ),
-              ),
-            ),
+                  ),
 
-            // Gas Cylinder Status
-            Card(
-              child: Padding(
-                padding: EdgeInsets.all(16.0),
-                child: Column(
-                  children: [
-                    Text(
-                      'Gas Cylinder Status',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
+                  // The solid line divider under the title
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16.0),
+                    child: Divider(
+                      color: Colors.white,
+                      height: 1,
+                      thickness: 0.5,
                     ),
-                    SizedBox(height: 10),
-                    Text(
-                      'Empty Cylinders: $_emptyGasCount',
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: _emptyGasCount > 0 ? Colors.red : Colors.green,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    SizedBox(height: 10),
-                    if (_emptyGases.isNotEmpty)
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Empty Gases:',
-                            style: TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                          SizedBox(height: 5),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: _emptyGases
-                                .map(
-                                  (gas) => Text(
-                                    '• $gas',
-                                    style: TextStyle(color: Colors.red),
-                                  ),
-                                )
-                                .toList(),
-                          ),
-                        ],
-                      )
-                    else
-                      Text(
-                        'All gas cylinders are full',
-                        style: TextStyle(color: Colors.green),
-                      ),
-                    SizedBox(height: 10),
-                    ElevatedButton(
-                      onPressed: _getGasStatus,
-                      child: Text('Refresh Gas Status'),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+                  ),
 
-            // Temperature Control
-            Card(
-              child: Padding(
-                padding: EdgeInsets.all(16.0),
-                child: Column(
-                  children: [
-                    Text(
-                      'Temperature Control', //925010012799371
-                      style: TextStyle(
-                        //
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    TextField(
-                      controller: _tempController,
-                      keyboardType: TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      decoration: InputDecoration(
-                        hintText: 'Enter temperature (15-35)',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    SizedBox(height: 10),
-                    ElevatedButton(
-                      onPressed: () =>
-                          _sendCommand('SETT${_tempController.text}'),
-                      child: Text('Set Temperature'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.orange,
-                        foregroundColor: Colors.white,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            // Humidity Control
-            Card(
-              child: Padding(
-                padding: EdgeInsets.all(16.0),
-                child: Column(
-                  children: [
-                    Text(
-                      'Humidity Control',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    TextField(
-                      controller: _humController,
-                      keyboardType: TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      decoration: InputDecoration(
-                        hintText: 'Enter humidity (30-80)',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    SizedBox(height: 10),
-                    ElevatedButton(
-                      onPressed: () =>
-                          _sendCommand('SETH${_humController.text}'),
-                      child: Text('Set Humidity'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue,
-                        foregroundColor: Colors.white,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            // Night Mode
-            Card(
-              child: Padding(
-                padding: EdgeInsets.all(16.0),
-                child: Column(
-                  children: [
-                    Text(
-                      'Night Mode',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    SizedBox(height: 10),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        ElevatedButton(
-                          onPressed: () => _sendCommand('NIGHT ON'),
-                          child: Text('Night Mode ON'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.purple,
-                            foregroundColor: Colors.white,
-                          ),
+                  // SCROLLABLE LIGHT CONTROLS
+                  Expanded(
+                    child: ListView(
+                      padding: EdgeInsets.zero,
+                      children: <Widget>[
+                        // 1. ALL LIGHTS Master Control (no slider, only switch)
+                        _buildLightControlItem(
+                          title: "All Lights",
+                          isOn: lightProvider.allLightsState,
+                          intensity: 0,
+                          onToggle: (v) {
+                            lightProvider.toggleAllLights();
+                            _sendCompleteStructure();
+                          },
+                          showSlider: false,
                         ),
-                        ElevatedButton(
-                          onPressed: () => _sendCommand('NIGHT OFF'),
-                          child: Text('Night Mode OFF'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.grey,
-                            foregroundColor: Colors.white,
-                          ),
+
+                        // 2. Night Mode Toggle
+                        _buildLightControlItem(
+                          title: "Night Mode",
+                          isOn: lightProvider.nightMode,
+                          intensity: 0,
+                          onToggle: (v) {
+                            lightProvider.toggleNightMode();
+                            _sendCompleteStructure();
+                          },
+                          showSlider: false,
                         ),
+
+                        // 3. Individual Light Controls (7 Lights)
+                        ...List.generate(7, (index) {
+                          return _buildLightControlItem(
+                            title: "Light ${index + 1}",
+                            isOn: lightProvider.lightStates[index],
+                            intensity: lightProvider.intensities[index]
+                                .toDouble(),
+                            onToggle: (v) {
+                              lightProvider.handleLightChange(
+                                index,
+                                v,
+                                v ? 50 : 0, // Turn on with 50%
+                              );
+                              _sendCompleteStructure();
+                            },
+                            onIntensityChange: (v) {
+                              lightProvider.handleLightChange(
+                                index,
+                                null,
+                                v.toInt(),
+                              );
+                              // Don't send command here to avoid spam, only on release
+                            },
+                            showSlider: true,
+                          );
+                        }),
+                        const SizedBox(height: 30),
                       ],
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            ),
-
-            // LED Control
-            Card(
-              child: Padding(
-                padding: EdgeInsets.all(16.0),
-                child: Column(
-                  children: [
-                    Text(
-                      'LED Control',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: _ledNumController,
-                            keyboardType: TextInputType.number,
-                            decoration: InputDecoration(
-                              hintText: 'LED # (1-10)',
-                              border: OutlineInputBorder(),
-                            ),
-                          ),
-                        ),
-                        SizedBox(width: 10),
-                        Expanded(
-                          child: TextField(
-                            controller: _ledValueController,
-                            keyboardType: TextInputType.number,
-                            decoration: InputDecoration(
-                              hintText: 'Value (0-255)',
-                              border: OutlineInputBorder(),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    SizedBox(height: 10),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        ElevatedButton(
-                          onPressed: () =>
-                              _sendCommand('LED${_ledNumController.text} ON'),
-                          child: Text('LED ON'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.green,
-                            foregroundColor: Colors.white,
-                          ),
-                        ),
-                        ElevatedButton(
-                          onPressed: () =>
-                              _sendCommand('LED${_ledNumController.text} OFF'),
-                          child: Text('LED OFF'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.red,
-                            foregroundColor: Colors.white,
-                          ),
-                        ),
-                        ElevatedButton(
-                          onPressed: () => _sendCommand(
-                            'LED${_ledNumController.text} SET${_ledValueController.text}',
-                          ),
-                          child: Text('Set Intensity'),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            // System Control
-            Card(
-              child: Padding(
-                padding: EdgeInsets.all(16.0),
-                child: Column(
-                  children: [
-                    Text(
-                      'System Control',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    SizedBox(height: 10),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        ElevatedButton(
-                          onPressed: _getStatus,
-                          child: Text('Get Full Status'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.teal,
-                            foregroundColor: Colors.white,
-                          ),
-                        ),
-                        ElevatedButton(
-                          onPressed: _getSensorData,
-                          child: Text('Refresh Sensors'),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            // Response
-            Card(
-              child: Padding(
-                padding: EdgeInsets.all(16.0),
-                child: Column(
-                  children: [
-                    Text(
-                      'Command Response',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    SizedBox(height: 10),
-                    Text(
-                      _response,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: _response.contains("Error")
-                            ? Colors.red
-                            : Colors.green,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
+            );
+          },
         ),
       ),
     );

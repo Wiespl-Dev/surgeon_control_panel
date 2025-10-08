@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:surgeon_control_panel/main.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class HospitalStoreScreen extends StatefulWidget {
   @override
@@ -358,6 +359,17 @@ class _HospitalStoreScreenState extends State<HospitalStoreScreen> {
     });
   }
 
+  Future<void> _logout() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove("uniqueCode");
+    await prefs.remove("mode");
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (context) => const LoginPage()),
+      (route) => false,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -410,8 +422,19 @@ class _HospitalStoreScreenState extends State<HospitalStoreScreen> {
                 ),
               ),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // Search Bar
+                  IconButton(
+                    onPressed: () {
+                      _logout();
+                    },
+                    icon: Icon(
+                      Icons.logout_rounded,
+                      color: Colors.white,
+                      size: 35,
+                    ),
+                  ),
                   Padding(
                     padding: const EdgeInsets.all(12.0),
                     child: TextField(
@@ -536,7 +559,7 @@ class _HospitalStoreScreenState extends State<HospitalStoreScreen> {
   Widget _buildItemCard(HospitalItem item, int index) {
     return GestureDetector(
       onTap: () => _showDetails(item),
-      child: Container(
+      child: SizedBox(
         height: 200, // Fixed card height of 200
         child: Card(
           elevation: 2,
