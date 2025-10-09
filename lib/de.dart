@@ -1,1372 +1,1372 @@
-// // import 'dart:async';
-// // import 'dart:typed_data';
-// // import 'package:flutter/material.dart';
-// // import 'package:usb_serial/usb_serial.dart';
-
-// // void main() {
-// //   runApp(
-// //     MaterialApp(
-// //       debugShowCheckedModeBanner: false,
-// //       title: 'Sensor Control App',
-// //       theme: ThemeData(primarySwatch: Colors.blue),
-// //       home: MainControlPage(),
-// //     ),
-// //   );
-// // }
-
-// // // --- MAIN WIDGET: Manages State, USB, and Navigation ---
-// // class MainControlPage extends StatefulWidget {
-// //   @override
-// //   _MainControlPageState createState() => _MainControlPageState();
-// // }
-
-// // class _MainControlPageState extends State<MainControlPage> {
-// //   // USB State
-// //   UsbPort? _port;
-// //   String usbStatus = "Disconnected";
-// //   bool isConnected = false;
-// //   String lastSentString = "Nothing sent yet";
-// //   String lastReceivedString = "Nothing received yet";
-// //   TextEditingController commandController = TextEditingController();
-
-// //   // UI State
-// //   int _selectedIndex = 0;
-// //   String _incomingBuffer = "";
-
-// //   @override
-// //   void initState() {
-// //     super.initState();
-// //     _initUsb();
-// //   }
-
-// //   @override
-// //   void dispose() {
-// //     _port?.close();
-// //     super.dispose();
-// //   }
-
-// //   // --- USB Communication Methods ---
-
-// //   Future<void> _initUsb() async {
-// //     try {
-// //       setState(() {
-// //         usbStatus = "Scanning for USB devices...";
-// //       });
-
-// //       List<UsbDevice> devices = await UsbSerial.listDevices();
-// //       print("Found ${devices.length} USB devices");
-
-// //       if (devices.isEmpty) {
-// //         setState(() {
-// //           usbStatus = "No USB devices found";
-// //           isConnected = false;
-// //         });
-// //         return;
-// //       }
-
-// //       UsbDevice device = devices.first;
-// //       print("Connecting to: ${device.deviceName}");
-
-// //       setState(() {
-// //         usbStatus = "Connecting to ${device.deviceName}...";
-// //       });
-
-// //       _port = await device.create();
-// //       bool open = await _port!.open();
-
-// //       if (open) {
-// //         await _port!.setPortParameters(9600, 8, 1, 0);
-// //         _port!.inputStream?.listen(_onDataReceived);
-
-// //         setState(() {
-// //           usbStatus = "Connected to ${device.deviceName}";
-// //           isConnected = true;
-// //         });
-
-// //         print("USB connected successfully");
-// //         _sendCommand("STATUS");
-// //       } else {
-// //         setState(() {
-// //           usbStatus = "Failed to open USB port";
-// //           isConnected = false;
-// //         });
-// //       }
-// //     } catch (e) {
-// //       print("USB Error: $e");
-// //       setState(() {
-// //         usbStatus = "Error: $e";
-// //         isConnected = false;
-// //       });
-// //     }
-// //   }
-
-// //   void _onDataReceived(Uint8List data) {
-// //     String str = String.fromCharCodes(data);
-// //     print("Received RAW chunk: $str");
-
-// //     _incomingBuffer += str;
-
-// //     if (_incomingBuffer.contains('\n') ||
-// //         (_incomingBuffer.startsWith('{') && _incomingBuffer.contains('}'))) {
-// //       List<String> messages = _incomingBuffer.split('\n');
-
-// //       for (int i = 0; i < messages.length - 1; i++) {
-// //         String completeMessage = messages[i].trim();
-// //         if (completeMessage.isNotEmpty) {
-// //           _processCompleteMessage(completeMessage);
-// //         }
-// //       }
-
-// //       _incomingBuffer = messages.last;
-// //     }
-
-// //     if (_incomingBuffer.startsWith('{') && _incomingBuffer.endsWith('}')) {
-// //       _processCompleteMessage(_incomingBuffer);
-// //       _incomingBuffer = "";
-// //     }
-// //   }
-
-// //   void _processCompleteMessage(String completeMessage) {
-// //     print("Processing complete message: $completeMessage");
-// //     setState(() {
-// //       lastReceivedString = completeMessage;
-// //     });
-// //   }
-
-// //   void _sendCommand(String cmd) {
-// //     if (_port != null && isConnected) {
-// //       String commandToSend = cmd + "\n";
-// //       _port!.write(Uint8List.fromList(commandToSend.codeUnits));
-
-// //       setState(() {
-// //         lastSentString = commandToSend.trim();
-// //       });
-
-// //       print("Sent: $commandToSend");
-// //     } else {
-// //       print("Cannot send - USB not connected");
-// //       setState(() {
-// //         lastSentString = "FAILED: USB not connected";
-// //       });
-// //     }
-// //   }
-
-// //   void _sendCustomCommand() {
-// //     if (commandController.text.isNotEmpty) {
-// //       _sendCommand(commandController.text);
-// //       commandController.clear();
-// //     }
-// //   }
-
-// //   void _reconnectUsb() {
-// //     _initUsb();
-// //   }
-
-// //   void _onItemTapped(int index) {
-// //     setState(() {
-// //       _selectedIndex = index;
-// //     });
-// //   }
-
-// //   // --- Widget Build ---
-
-// //   @override
-// //   Widget build(BuildContext context) {
-// //     final List<Widget> _widgetOptions = <Widget>[
-// //       TemperatureControlPage(), // No parameters needed
-// //       HumidityControlPage(), // No parameters needed
-// //       LightIntensityPage(), // No parameters needed
-// //       CommunicationPage(
-// //         usbStatus: usbStatus,
-// //         isConnected: isConnected,
-// //         lastSentString: lastSentString,
-// //         lastReceivedString: lastReceivedString,
-// //         incomingBuffer: _incomingBuffer,
-// //         commandController: commandController,
-// //         onSendCommand: _sendCommand,
-// //         onSendCustomCommand: _sendCustomCommand,
-// //         onReconnectUsb: _reconnectUsb,
-// //       ),
-// //     ];
-
-// //     return Scaffold(
-// //       appBar: AppBar(
-// //         title: Text(_getPageTitle(_selectedIndex)),
-// //         backgroundColor: isConnected ? Colors.green : Colors.red,
-// //       ),
-// //       body: _widgetOptions.elementAt(_selectedIndex),
-// //       bottomNavigationBar: BottomNavigationBar(
-// //         items: const <BottomNavigationBarItem>[
-// //           BottomNavigationBarItem(
-// //             icon: Icon(Icons.thermostat_outlined),
-// //             label: 'Temperature',
-// //           ),
-// //           BottomNavigationBarItem(
-// //             icon: Icon(Icons.water_drop_outlined),
-// //             label: 'Humidity',
-// //           ),
-// //           BottomNavigationBarItem(
-// //             icon: Icon(Icons.lightbulb_outline),
-// //             label: 'Lights',
-// //           ),
-// //           BottomNavigationBarItem(icon: Icon(Icons.usb), label: 'Comms'),
-// //         ],
-// //         currentIndex: _selectedIndex,
-// //         selectedItemColor: isConnected ? Colors.green[800] : Colors.red[800],
-// //         unselectedItemColor: Colors.grey,
-// //         type: BottomNavigationBarType.fixed,
-// //         onTap: _onItemTapped,
-// //       ),
-// //     );
-// //   }
-
-// //   String _getPageTitle(int index) {
-// //     switch (index) {
-// //       case 0:
-// //         return "Temperature Control";
-// //       case 1:
-// //         return "Humidity Control";
-// //       case 2:
-// //         return "Light Intensity Control";
-// //       case 3:
-// //         return "USB Communication";
-// //       default:
-// //         return "Sensor Control App";
-// //     }
-// //   }
-// // }
-
-// // // -----------------------------------------------------------------------------
-// // // --- TEMPERATURE CONTROL SCREEN (Standalone) ---
-// // // -----------------------------------------------------------------------------
-
-// // class TemperatureControlPage extends StatefulWidget {
-// //   @override
-// //   _TemperatureControlPageState createState() => _TemperatureControlPageState();
-// // }
-
-// // class _TemperatureControlPageState extends State<TemperatureControlPage> {
-// //   // Temperature state
-// //   String currentTemp = "--";
-// //   int setTemperature = 25;
-
-// //   // USB communication
-// //   UsbPort? _port;
-// //   bool isConnected = false;
-// //   String _incomingBuffer = "";
-
-// //   @override
-// //   void initState() {
-// //     super.initState();
-// //     _initUsb();
-// //   }
-
-// //   @override
-// //   void dispose() {
-// //     _port?.close();
-// //     super.dispose();
-// //   }
-
-// //   // USB Initialization
-// //   Future<void> _initUsb() async {
-// //     try {
-// //       List<UsbDevice> devices = await UsbSerial.listDevices();
-// //       if (devices.isEmpty) {
-// //         setState(() {
-// //           isConnected = false;
-// //         });
-// //         return;
-// //       }
-
-// //       UsbDevice device = devices.first;
-// //       _port = await device.create();
-// //       bool open = await _port!.open();
-
-// //       if (open) {
-// //         await _port!.setPortParameters(9600, 8, 1, 0);
-// //         _port!.inputStream?.listen(_onDataReceived);
-
-// //         setState(() {
-// //           isConnected = true;
-// //         });
-
-// //         _sendCommand("STATUS");
-// //       }
-// //     } catch (e) {
-// //       print("USB Error in TemperatureControlPage: $e");
-// //       setState(() {
-// //         isConnected = false;
-// //       });
-// //     }
-// //   }
-
-// //   void _onDataReceived(Uint8List data) {
-// //     String str = String.fromCharCodes(data);
-// //     _incomingBuffer += str;
-
-// //     if (_incomingBuffer.contains('\n') ||
-// //         (_incomingBuffer.startsWith('{') && _incomingBuffer.contains('}'))) {
-// //       List<String> messages = _incomingBuffer.split('\n');
-
-// //       for (int i = 0; i < messages.length - 1; i++) {
-// //         String completeMessage = messages[i].trim();
-// //         if (completeMessage.isNotEmpty) {
-// //           _processCompleteMessage(completeMessage);
-// //         }
-// //       }
-
-// //       _incomingBuffer = messages.last;
-// //     }
-
-// //     if (_incomingBuffer.startsWith('{') && _incomingBuffer.endsWith('}')) {
-// //       _processCompleteMessage(_incomingBuffer);
-// //       _incomingBuffer = "";
-// //     }
-// //   }
-
-// //   void _processCompleteMessage(String completeMessage) {
-// //     _parseStructuredData(completeMessage);
-// //   }
-
-// //   void _parseStructuredData(String data) {
-// //     try {
-// //       if (data.startsWith('{') && data.endsWith('}')) {
-// //         String content = data.substring(1, data.length - 1);
-// //         List<String> pairs = content.split(',');
-
-// //         Map<String, dynamic> parsedData = {};
-
-// //         for (String pair in pairs) {
-// //           List<String> keyValue = pair.split(':');
-// //           if (keyValue.length == 2) {
-// //             String key = keyValue[0].trim();
-// //             String value = keyValue[1].trim();
-// //             parsedData[key] = value;
-// //           }
-// //         }
-
-// //         setState(() {
-// //           // Parse temperature (C_OT_TEMP:239 = 23.9°C)
-// //           if (parsedData.containsKey('C_OT_TEMP')) {
-// //             String tempStr = parsedData['C_OT_TEMP'].toString();
-// //             if (tempStr.length >= 2) {
-// //               currentTemp =
-// //                   '${tempStr.substring(0, tempStr.length - 1)}.${tempStr.substring(tempStr.length - 1)}';
-// //             } else {
-// //               currentTemp = tempStr;
-// //             }
-// //           }
-
-// //           // Parse set temperature (S_TEMP_SETPT:215 = 21.5°C)
-// //           if (parsedData.containsKey('S_TEMP_SETPT')) {
-// //             String setTempStr = parsedData['S_TEMP_SETPT'].toString();
-// //             if (setTempStr.length >= 2) {
-// //               setTemperature = int.parse(
-// //                 setTempStr.substring(0, setTempStr.length - 1),
-// //               );
-// //             }
-// //           }
-// //         });
-// //       }
-// //     } catch (e) {
-// //       print("Error parsing temperature data: $e");
-// //     }
-// //   }
-
-// //   void _sendCommand(String cmd) {
-// //     if (_port != null && isConnected) {
-// //       String commandToSend = cmd + "\n";
-// //       _port!.write(Uint8List.fromList(commandToSend.codeUnits));
-// //       print("Temperature Page Sent: $commandToSend");
-// //     }
-// //   }
-
-// //   void _sendCompleteStructure() {
-// //     List<String> pairs = [];
-
-// //     pairs.add('SR_WSL:200001');
-// //     pairs.add('C_PRESSURE_1:000');
-// //     pairs.add('C_PRESSURE_1_SIGN_BIT:1');
-// //     pairs.add('C_PRESSURE_2:000');
-// //     pairs.add('C_PRESSURE_2_SIGN_BIT:1');
-
-// //     String tempValue = currentTemp != "--"
-// //         ? (double.tryParse(currentTemp) ?? 25.0).toInt().toString().padLeft(
-// //             3,
-// //             '0',
-// //           )
-// //         : "250";
-
-// //     pairs.add('C_OT_TEMP:$tempValue');
-// //     pairs.add('C_RH:500'); // Default humidity
-
-// //     for (int i = 1; i <= 10; i++) {
-// //       pairs.add('F_Sensor_${i}_FAULT_BIT:0');
-// //       pairs.add('S_Sensor_${i}_NO_NC_SETTING:1');
-// //       pairs.add('S_Light_${i}_ON_OFF:0'); // Default lights off
-// //       pairs.add('S_Light_${i}_Intensity:000');
-// //     }
-
-// //     pairs.add('S_IOT_TIMER:0060');
-// //     pairs.add(
-// //       'S_TEMP_SETPT:${(setTemperature * 10).toString().padLeft(3, '0')}',
-// //     );
-// //     pairs.add('S_RH_SETPT:500'); // Default humidity setpoint
-
-// //     String command = '{${pairs.join(',')}}';
-// //     _sendCommand(command);
-// //   }
-
-// //   void _setTemperature(int value) {
-// //     setState(() {
-// //       setTemperature = value;
-// //     });
-// //     _sendCompleteStructure();
-// //   }
-
-// //   Widget _buildSetPointControl(
-// //     String title,
-// //     int value,
-// //     int min,
-// //     int max,
-// //     int step,
-// //     ValueChanged<int> onChanged,
-// //   ) {
-// //     return Card(
-// //       margin: EdgeInsets.all(8.0),
-// //       child: Padding(
-// //         padding: const EdgeInsets.all(16.0),
-// //         child: Column(
-// //           children: [
-// //             Text(
-// //               title,
-// //               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-// //             ),
-// //             SizedBox(height: 10),
-// //             Text(
-// //               '$value',
-// //               style: TextStyle(
-// //                 fontSize: 48,
-// //                 fontWeight: FontWeight.bold,
-// //                 color: Colors.blue,
-// //               ),
-// //             ),
-// //             SizedBox(height: 10),
-// //             Row(
-// //               mainAxisAlignment: MainAxisAlignment.center,
-// //               children: [
-// //                 IconButton(
-// //                   icon: Icon(Icons.remove_circle_outline, size: 30),
-// //                   onPressed: () => value > min ? onChanged(value - step) : null,
-// //                 ),
-// //                 SizedBox(width: 20),
-// //                 IconButton(
-// //                   icon: Icon(Icons.add_circle_outline, size: 30),
-// //                   onPressed: () => value < max ? onChanged(value + step) : null,
-// //                 ),
-// //               ],
-// //             ),
-// //           ],
-// //         ),
-// //       ),
-// //     );
-// //   }
-
-// //   @override
-// //   Widget build(BuildContext context) {
-// //     return SingleChildScrollView(
-// //       padding: EdgeInsets.all(16.0),
-// //       child: Column(
-// //         crossAxisAlignment: CrossAxisAlignment.stretch,
-// //         children: <Widget>[
-// //           // Connection Status
-// //           Card(
-// //             color: isConnected ? Colors.green[50] : Colors.red[50],
-// //             child: Padding(
-// //               padding: const EdgeInsets.all(12.0),
-// //               child: Row(
-// //                 children: [
-// //                   Icon(
-// //                     isConnected ? Icons.usb : Icons.usb_off,
-// //                     color: isConnected ? Colors.green : Colors.red,
-// //                   ),
-// //                   SizedBox(width: 8),
-// //                   Text(
-// //                     isConnected ? "USB Connected" : "USB Disconnected",
-// //                     style: TextStyle(fontWeight: FontWeight.bold),
-// //                   ),
-// //                 ],
-// //               ),
-// //             ),
-// //           ),
-// //           SizedBox(height: 16),
-
-// //           // Current Temperature
-// //           Card(
-// //             color: Colors.blue[50],
-// //             child: Padding(
-// //               padding: const EdgeInsets.all(20.0),
-// //               child: Column(
-// //                 children: [
-// //                   Text("Current Temperature", style: TextStyle(fontSize: 16)),
-// //                   Text(
-// //                     "$currentTemp °C",
-// //                     style: TextStyle(
-// //                       fontSize: 40,
-// //                       fontWeight: FontWeight.bold,
-// //                       color: Colors.blue,
-// //                     ),
-// //                   ),
-// //                 ],
-// //               ),
-// //             ),
-// //           ),
-// //           SizedBox(height: 20),
-
-// //           // Set Point Control
-// //           Text(
-// //             "Temperature Set Point",
-// //             style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-// //             textAlign: TextAlign.center,
-// //           ),
-// //           _buildSetPointControl(
-// //             "Set Temp (°C)",
-// //             setTemperature,
-// //             15,
-// //             35,
-// //             1,
-// //             _setTemperature,
-// //           ),
-// //           SizedBox(height: 20),
-
-// //           // Action Buttons
-// //           Row(
-// //             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-// //             children: [
-// //               ElevatedButton(
-// //                 onPressed: () => _sendCommand("STATUS"),
-// //                 child: Text("Refresh Status"),
-// //               ),
-// //               ElevatedButton(
-// //                 onPressed: _sendCompleteStructure,
-// //                 child: Text("Send All Data"),
-// //               ),
-// //             ],
-// //           ),
-// //           SizedBox(height: 20),
-
-// //           Text(
-// //             "Set points are sent upon change.",
-// //             textAlign: TextAlign.center,
-// //             style: TextStyle(
-// //               fontStyle: FontStyle.italic,
-// //               color: Colors.grey[600],
-// //             ),
-// //           ),
-// //         ],
-// //       ),
-// //     );
-// //   }
-// // }
-
-// // // -----------------------------------------------------------------------------
-// // // --- HUMIDITY CONTROL SCREEN (Standalone) ---
-// // // -----------------------------------------------------------------------------
-
-// // class HumidityControlPage extends StatefulWidget {
-// //   @override
-// //   _HumidityControlPageState createState() => _HumidityControlPageState();
-// // }
-
-// // class _HumidityControlPageState extends State<HumidityControlPage> {
-// //   // Humidity state
-// //   String currentHum = "--";
-// //   int setHumidity = 50;
-
-// //   // USB communication
-// //   UsbPort? _port;
-// //   bool isConnected = false;
-// //   String _incomingBuffer = "";
-
-// //   @override
-// //   void initState() {
-// //     super.initState();
-// //     _initUsb();
-// //   }
-
-// //   @override
-// //   void dispose() {
-// //     _port?.close();
-// //     super.dispose();
-// //   }
-
-// //   // USB Initialization
-// //   Future<void> _initUsb() async {
-// //     try {
-// //       List<UsbDevice> devices = await UsbSerial.listDevices();
-// //       if (devices.isEmpty) {
-// //         setState(() {
-// //           isConnected = false;
-// //         });
-// //         return;
-// //       }
-
-// //       UsbDevice device = devices.first;
-// //       _port = await device.create();
-// //       bool open = await _port!.open();
-
-// //       if (open) {
-// //         await _port!.setPortParameters(9600, 8, 1, 0);
-// //         _port!.inputStream?.listen(_onDataReceived);
-
-// //         setState(() {
-// //           isConnected = true;
-// //         });
-
-// //         _sendCommand("STATUS");
-// //       }
-// //     } catch (e) {
-// //       print("USB Error in HumidityControlPage: $e");
-// //       setState(() {
-// //         isConnected = false;
-// //       });
-// //     }
-// //   }
-
-// //   void _onDataReceived(Uint8List data) {
-// //     String str = String.fromCharCodes(data);
-// //     _incomingBuffer += str;
-
-// //     if (_incomingBuffer.contains('\n') ||
-// //         (_incomingBuffer.startsWith('{') && _incomingBuffer.contains('}'))) {
-// //       List<String> messages = _incomingBuffer.split('\n');
-
-// //       for (int i = 0; i < messages.length - 1; i++) {
-// //         String completeMessage = messages[i].trim();
-// //         if (completeMessage.isNotEmpty) {
-// //           _processCompleteMessage(completeMessage);
-// //         }
-// //       }
-
-// //       _incomingBuffer = messages.last;
-// //     }
-
-// //     if (_incomingBuffer.startsWith('{') && _incomingBuffer.endsWith('}')) {
-// //       _processCompleteMessage(_incomingBuffer);
-// //       _incomingBuffer = "";
-// //     }
-// //   }
-
-// //   void _processCompleteMessage(String completeMessage) {
-// //     _parseStructuredData(completeMessage);
-// //   }
-
-// //   void _parseStructuredData(String data) {
-// //     try {
-// //       if (data.startsWith('{') && data.endsWith('}')) {
-// //         String content = data.substring(1, data.length - 1);
-// //         List<String> pairs = content.split(',');
-
-// //         Map<String, dynamic> parsedData = {};
-
-// //         for (String pair in pairs) {
-// //           List<String> keyValue = pair.split(':');
-// //           if (keyValue.length == 2) {
-// //             String key = keyValue[0].trim();
-// //             String value = keyValue[1].trim();
-// //             parsedData[key] = value;
-// //           }
-// //         }
-
-// //         setState(() {
-// //           // Parse humidity (C_RH:295 = 29.5%)
-// //           if (parsedData.containsKey('C_RH')) {
-// //             String humStr = parsedData['C_RH'].toString();
-// //             if (humStr.length >= 2) {
-// //               currentHum =
-// //                   '${humStr.substring(0, humStr.length - 1)}.${humStr.substring(humStr.length - 1)}';
-// //             } else {
-// //               currentHum = humStr;
-// //             }
-// //           }
-
-// //           // Parse set humidity (S_RH_SETPT:784 = 78.4%)
-// //           if (parsedData.containsKey('S_RH_SETPT')) {
-// //             String setHumStr = parsedData['S_RH_SETPT'].toString();
-// //             if (setHumStr.length >= 2) {
-// //               setHumidity = int.parse(
-// //                 setHumStr.substring(0, setHumStr.length - 1),
-// //               );
-// //             }
-// //           }
-// //         });
-// //       }
-// //     } catch (e) {
-// //       print("Error parsing humidity data: $e");
-// //     }
-// //   }
-
-// //   void _sendCommand(String cmd) {
-// //     if (_port != null && isConnected) {
-// //       String commandToSend = cmd + "\n";
-// //       _port!.write(Uint8List.fromList(commandToSend.codeUnits));
-// //       print("Humidity Page Sent: $commandToSend");
-// //     }
-// //   }
-
-// //   void _sendCompleteStructure() {
-// //     List<String> pairs = [];
-
-// //     pairs.add('SR_WSL:200001');
-// //     pairs.add('C_PRESSURE_1:000');
-// //     pairs.add('C_PRESSURE_1_SIGN_BIT:1');
-// //     pairs.add('C_PRESSURE_2:000');
-// //     pairs.add('C_PRESSURE_2_SIGN_BIT:1');
-
-// //     pairs.add('C_OT_TEMP:250'); // Default temperature
-// //     String humValue = currentHum != "--"
-// //         ? (double.tryParse(currentHum) ?? 50.0).toInt().toString().padLeft(
-// //             3,
-// //             '0',
-// //           )
-// //         : "500";
-
-// //     pairs.add('C_RH:$humValue');
-
-// //     for (int i = 1; i <= 10; i++) {
-// //       pairs.add('F_Sensor_${i}_FAULT_BIT:0');
-// //       pairs.add('S_Sensor_${i}_NO_NC_SETTING:1');
-// //       pairs.add('S_Light_${i}_ON_OFF:0'); // Default lights off
-// //       pairs.add('S_Light_${i}_Intensity:000');
-// //     }
-
-// //     pairs.add('S_IOT_TIMER:0060');
-// //     pairs.add('S_TEMP_SETPT:250'); // Default temperature setpoint
-// //     pairs.add('S_RH_SETPT:${(setHumidity * 10).toString().padLeft(3, '0')}');
-
-// //     String command = '{${pairs.join(',')}}';
-// //     _sendCommand(command);
-// //   }
-
-// //   void _setHumidity(int value) {
-// //     setState(() {
-// //       setHumidity = value;
-// //     });
-// //     _sendCompleteStructure();
-// //   }
-
-// //   Widget _buildSetPointControl(
-// //     String title,
-// //     int value,
-// //     int min,
-// //     int max,
-// //     int step,
-// //     ValueChanged<int> onChanged,
-// //   ) {
-// //     return Card(
-// //       margin: EdgeInsets.all(8.0),
-// //       child: Padding(
-// //         padding: const EdgeInsets.all(16.0),
-// //         child: Column(
-// //           children: [
-// //             Text(
-// //               title,
-// //               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-// //             ),
-// //             SizedBox(height: 10),
-// //             Text(
-// //               '$value',
-// //               style: TextStyle(
-// //                 fontSize: 48,
-// //                 fontWeight: FontWeight.bold,
-// //                 color: Colors.teal,
-// //               ),
-// //             ),
-// //             SizedBox(height: 10),
-// //             Row(
-// //               mainAxisAlignment: MainAxisAlignment.center,
-// //               children: [
-// //                 IconButton(
-// //                   icon: Icon(Icons.remove_circle_outline, size: 30),
-// //                   onPressed: () => value > min ? onChanged(value - step) : null,
-// //                 ),
-// //                 SizedBox(width: 20),
-// //                 IconButton(
-// //                   icon: Icon(Icons.add_circle_outline, size: 30),
-// //                   onPressed: () => value < max ? onChanged(value + step) : null,
-// //                 ),
-// //               ],
-// //             ),
-// //           ],
-// //         ),
-// //       ),
-// //     );
-// //   }
-
-// //   @override
-// //   Widget build(BuildContext context) {
-// //     return SingleChildScrollView(
-// //       padding: EdgeInsets.all(16.0),
-// //       child: Column(
-// //         crossAxisAlignment: CrossAxisAlignment.stretch,
-// //         children: <Widget>[
-// //           // Connection Status
-// //           Card(
-// //             color: isConnected ? Colors.green[50] : Colors.red[50],
-// //             child: Padding(
-// //               padding: const EdgeInsets.all(12.0),
-// //               child: Row(
-// //                 children: [
-// //                   Icon(
-// //                     isConnected ? Icons.usb : Icons.usb_off,
-// //                     color: isConnected ? Colors.green : Colors.red,
-// //                   ),
-// //                   SizedBox(width: 8),
-// //                   Text(
-// //                     isConnected ? "USB Connected" : "USB Disconnected",
-// //                     style: TextStyle(fontWeight: FontWeight.bold),
-// //                   ),
-// //                 ],
-// //               ),
-// //             ),
-// //           ),
-// //           SizedBox(height: 16),
-
-// //           // Current Humidity
-// //           Card(
-// //             color: Colors.teal[50],
-// //             child: Padding(
-// //               padding: const EdgeInsets.all(20.0),
-// //               child: Column(
-// //                 children: [
-// //                   Text(
-// //                     "Current Relative Humidity",
-// //                     style: TextStyle(fontSize: 16),
-// //                   ),
-// //                   Text(
-// //                     "$currentHum %",
-// //                     style: TextStyle(
-// //                       fontSize: 40,
-// //                       fontWeight: FontWeight.bold,
-// //                       color: Colors.teal,
-// //                     ),
-// //                   ),
-// //                 ],
-// //               ),
-// //             ),
-// //           ),
-// //           SizedBox(height: 20),
-
-// //           // Set Point Control
-// //           Text(
-// //             "Humidity Set Point",
-// //             style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-// //             textAlign: TextAlign.center,
-// //           ),
-// //           _buildSetPointControl(
-// //             "Set Humidity (%)",
-// //             setHumidity,
-// //             30,
-// //             80,
-// //             1,
-// //             _setHumidity,
-// //           ),
-// //           SizedBox(height: 20),
-
-// //           // Action Buttons
-// //           Row(
-// //             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-// //             children: [
-// //               ElevatedButton(
-// //                 onPressed: () => _sendCommand("STATUS"),
-// //                 child: Text("Refresh Status"),
-// //               ),
-// //               ElevatedButton(
-// //                 onPressed: _sendCompleteStructure,
-// //                 child: Text("Send All Data"),
-// //               ),
-// //             ],
-// //           ),
-// //           SizedBox(height: 20),
-
-// //           Text(
-// //             "Set points are sent upon change.",
-// //             textAlign: TextAlign.center,
-// //             style: TextStyle(
-// //               fontStyle: FontStyle.italic,
-// //               color: Colors.grey[600],
-// //             ),
-// //           ),
-// //         ],
-// //       ),
-// //     );
-// //   }
-// // }
-
-// // // -----------------------------------------------------------------------------
-// // // --- LIGHT INTENSITY CONTROL SCREEN (Standalone) ---
-// // // -----------------------------------------------------------------------------
-
-// // class LightIntensityPage extends StatefulWidget {
-// //   @override
-// //   _LightIntensityPageState createState() => _LightIntensityPageState();
-// // }
-
-// // class _LightIntensityPageState extends State<LightIntensityPage> {
-// //   // Light state
-// //   List<int> intensities = List.filled(10, 0);
-// //   List<bool> lightStates = List.filled(10, false);
-// //   bool nightMode = false;
-
-// //   // USB communication
-// //   UsbPort? _port;
-// //   bool isConnected = false;
-// //   String _incomingBuffer = "";
-
-// //   @override
-// //   void initState() {
-// //     super.initState();
-// //     _initUsb();
-// //   }
-
-// //   @override
-// //   void dispose() {
-// //     _port?.close();
-// //     super.dispose();
-// //   }
-
-// //   // USB Initialization
-// //   Future<void> _initUsb() async {
-// //     try {
-// //       List<UsbDevice> devices = await UsbSerial.listDevices();
-// //       if (devices.isEmpty) {
-// //         setState(() {
-// //           isConnected = false;
-// //         });
-// //         return;
-// //       }
-
-// //       UsbDevice device = devices.first;
-// //       _port = await device.create();
-// //       bool open = await _port!.open();
-
-// //       if (open) {
-// //         await _port!.setPortParameters(9600, 8, 1, 0);
-// //         _port!.inputStream?.listen(_onDataReceived);
-
-// //         setState(() {
-// //           isConnected = true;
-// //         });
-
-// //         _sendCommand("STATUS");
-// //       }
-// //     } catch (e) {
-// //       print("USB Error in LightIntensityPage: $e");
-// //       setState(() {
-// //         isConnected = false;
-// //       });
-// //     }
-// //   }
-
-// //   void _onDataReceived(Uint8List data) {
-// //     String str = String.fromCharCodes(data);
-// //     _incomingBuffer += str;
-
-// //     if (_incomingBuffer.contains('\n') ||
-// //         (_incomingBuffer.startsWith('{') && _incomingBuffer.contains('}'))) {
-// //       List<String> messages = _incomingBuffer.split('\n');
-
-// //       for (int i = 0; i < messages.length - 1; i++) {
-// //         String completeMessage = messages[i].trim();
-// //         if (completeMessage.isNotEmpty) {
-// //           _processCompleteMessage(completeMessage);
-// //         }
-// //       }
-
-// //       _incomingBuffer = messages.last;
-// //     }
-
-// //     if (_incomingBuffer.startsWith('{') && _incomingBuffer.endsWith('}')) {
-// //       _processCompleteMessage(_incomingBuffer);
-// //       _incomingBuffer = "";
-// //     }
-// //   }
-
-// //   void _processCompleteMessage(String completeMessage) {
-// //     _parseStructuredData(completeMessage);
-// //   }
-
-// //   void _parseStructuredData(String data) {
-// //     try {
-// //       if (data.startsWith('{') && data.endsWith('}')) {
-// //         String content = data.substring(1, data.length - 1);
-// //         List<String> pairs = content.split(',');
-
-// //         Map<String, dynamic> parsedData = {};
-
-// //         for (String pair in pairs) {
-// //           List<String> keyValue = pair.split(':');
-// //           if (keyValue.length == 2) {
-// //             String key = keyValue[0].trim();
-// //             String value = keyValue[1].trim();
-// //             parsedData[key] = value;
-// //           }
-// //         }
-
-// //         setState(() {
-// //           // Parse light ON/OFF states and intensities
-// //           bool anyLightOn = false;
-// //           for (int i = 1; i <= 10; i++) {
-// //             String lightOnOffKey = 'S_Light_${i}_ON_OFF';
-// //             if (parsedData.containsKey(lightOnOffKey)) {
-// //               bool state = parsedData[lightOnOffKey] == '1';
-// //               lightStates[i - 1] = state;
-// //               if (state) anyLightOn = true;
-// //             }
-
-// //             String intensityKey = 'S_Light_${i}_Intensity';
-// //             if (parsedData.containsKey(intensityKey)) {
-// //               try {
-// //                 intensities[i - 1] = int.parse(
-// //                   parsedData[intensityKey].toString(),
-// //                 );
-// //               } catch (e) {
-// //                 print(
-// //                   "Error parsing intensity for light $i: ${parsedData[intensityKey]}",
-// //                 );
-// //               }
-// //             }
-// //           }
-
-// //           nightMode = !anyLightOn;
-// //         });
-// //       }
-// //     } catch (e) {
-// //       print("Error parsing light data: $e");
-// //     }
-// //   }
-
-// //   void _sendCommand(String cmd) {
-// //     if (_port != null && isConnected) {
-// //       String commandToSend = cmd + "\n";
-// //       _port!.write(Uint8List.fromList(commandToSend.codeUnits));
-// //       print("Light Page Sent: $commandToSend");
-// //     }
-// //   }
-
-// //   void _sendCompleteStructure() {
-// //     List<String> pairs = [];
-
-// //     pairs.add('SR_WSL:200001');
-// //     pairs.add('C_PRESSURE_1:000');
-// //     pairs.add('C_PRESSURE_1_SIGN_BIT:1');
-// //     pairs.add('C_PRESSURE_2:000');
-// //     pairs.add('C_PRESSURE_2_SIGN_BIT:1');
-
-// //     pairs.add('C_OT_TEMP:250'); // Default temperature
-// //     pairs.add('C_RH:500'); // Default humidity
-
-// //     for (int i = 1; i <= 10; i++) {
-// //       pairs.add('F_Sensor_${i}_FAULT_BIT:0');
-// //       pairs.add('S_Sensor_${i}_NO_NC_SETTING:1');
-// //       pairs.add('S_Light_${i}_ON_OFF:${lightStates[i - 1] ? '1' : '0'}');
-// //       pairs.add(
-// //         'S_Light_${i}_Intensity:${intensities[i - 1].toString().padLeft(3, '0')}',
-// //       );
-// //     }
-
-// //     pairs.add('S_IOT_TIMER:0060');
-// //     pairs.add('S_TEMP_SETPT:250'); // Default temperature setpoint
-// //     pairs.add('S_RH_SETPT:500'); // Default humidity setpoint
-
-// //     String command = '{${pairs.join(',')}}';
-// //     _sendCommand(command);
-// //   }
-
-// //   void _handleLightChange(int lightIndex, bool? turnOn, int? intensity) {
-// //     setState(() {
-// //       if (turnOn != null) {
-// //         lightStates[lightIndex] = turnOn;
-// //         if (!turnOn) intensities[lightIndex] = 0;
-// //       }
-// //       if (intensity != null) {
-// //         intensities[lightIndex] = intensity;
-// //         if (intensity > 0) lightStates[lightIndex] = true;
-// //       }
-// //     });
-// //     _sendCompleteStructure();
-// //   }
-
-// //   void _toggleNightMode() {
-// //     setState(() {
-// //       nightMode = !nightMode;
-// //       if (nightMode) {
-// //         for (int i = 0; i < 10; i++) {
-// //           lightStates[i] = false;
-// //           intensities[i] = 0;
-// //         }
-// //       }
-// //     });
-// //     _sendCompleteStructure();
-// //   }
-
-// //   Widget _buildLightControl(int index) {
-// //     return Card(
-// //       margin: EdgeInsets.symmetric(vertical: 4.0),
-// //       child: ListTile(
-// //         leading: Icon(
-// //           Icons.lightbulb,
-// //           color: lightStates[index] ? Colors.amber : Colors.grey,
-// //         ),
-// //         title: Text("Light ${index + 1}"),
-// //         subtitle: Slider(
-// //           value: intensities[index].toDouble(),
-// //           min: 0,
-// //           max: 100,
-// //           divisions: 100,
-// //           label: "${intensities[index]}%",
-// //           onChanged: (val) {
-// //             _handleLightChange(index, null, val.toInt());
-// //           },
-// //         ),
-// //         trailing: Switch(
-// //           value: lightStates[index],
-// //           onChanged: (val) {
-// //             _handleLightChange(index, val, null);
-// //           },
-// //         ),
-// //       ),
-// //     );
-// //   }
-
-// //   @override
-// //   Widget build(BuildContext context) {
-// //     return SingleChildScrollView(
-// //       padding: EdgeInsets.all(16.0),
-// //       child: Column(
-// //         crossAxisAlignment: CrossAxisAlignment.stretch,
-// //         children: <Widget>[
-// //           // Connection Status
-// //           Card(
-// //             color: isConnected ? Colors.green[50] : Colors.red[50],
-// //             child: Padding(
-// //               padding: const EdgeInsets.all(12.0),
-// //               child: Row(
-// //                 children: [
-// //                   Icon(
-// //                     isConnected ? Icons.usb : Icons.usb_off,
-// //                     color: isConnected ? Colors.green : Colors.red,
-// //                   ),
-// //                   SizedBox(width: 8),
-// //                   Text(
-// //                     isConnected ? "USB Connected" : "USB Disconnected",
-// //                     style: TextStyle(fontWeight: FontWeight.bold),
-// //                   ),
-// //                 ],
-// //               ),
-// //             ),
-// //           ),
-// //           SizedBox(height: 16),
-
-// //           // Night Mode
-// //           Card(
-// //             color: nightMode ? Colors.grey[200] : Colors.yellow[100],
-// //             child: ListTile(
-// //               title: Text("Night Mode"),
-// //               subtitle: Text(
-// //                 nightMode ? "All lights are OFF" : "Lights are ON",
-// //               ),
-// //               trailing: Switch(
-// //                 value: nightMode,
-// //                 onChanged: (v) => _toggleNightMode(),
-// //               ),
-// //             ),
-// //           ),
-// //           Divider(height: 20, thickness: 2),
-
-// //           // Action Buttons
-// //           Row(
-// //             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-// //             children: [
-// //               ElevatedButton(
-// //                 onPressed: () => _sendCommand("STATUS"),
-// //                 child: Text("Refresh Status"),
-// //               ),
-// //               ElevatedButton(
-// //                 onPressed: _sendCompleteStructure,
-// //                 child: Text("Send All Data"),
-// //               ),
-// //             ],
-// //           ),
-// //           SizedBox(height: 20),
-
-// //           Text(
-// //             "Individual Light Controls (10)",
-// //             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-// //             textAlign: TextAlign.center,
-// //           ),
-// //           SizedBox(height: 10),
-// //           ...List.generate(10, (index) => _buildLightControl(index)),
-// //         ],
-// //       ),
-// //     );
-// //   }
-// // }
-
-// // // -----------------------------------------------------------------------------
-// // // --- COMMUNICATION SCREEN ---
-// // // -----------------------------------------------------------------------------
-
-// // class CommunicationPage extends StatelessWidget {
-// //   final String usbStatus;
-// //   final bool isConnected;
-// //   final String lastSentString;
-// //   final String lastReceivedString;
-// //   final String incomingBuffer;
-// //   final TextEditingController commandController;
-// //   final Function(String) onSendCommand;
-// //   final VoidCallback onSendCustomCommand;
-// //   final VoidCallback onReconnectUsb;
-
-// //   CommunicationPage({
-// //     required this.usbStatus,
-// //     required this.isConnected,
-// //     required this.lastSentString,
-// //     required this.lastReceivedString,
-// //     required this.incomingBuffer,
-// //     required this.commandController,
-// //     required this.onSendCommand,
-// //     required this.onSendCustomCommand,
-// //     required this.onReconnectUsb,
-// //   });
-
-// //   @override
-// //   Widget build(BuildContext context) {
-// //     return SingleChildScrollView(
-// //       padding: EdgeInsets.all(16.0),
-// //       child: Column(
-// //         crossAxisAlignment: CrossAxisAlignment.stretch,
-// //         children: <Widget>[
-// //           // USB Status
-// //           Card(
-// //             color: isConnected ? Colors.green[50] : Colors.red[50],
-// //             child: Padding(
-// //               padding: EdgeInsets.all(16.0),
-// //               child: Row(
-// //                 children: [
-// //                   Icon(
-// //                     isConnected ? Icons.usb : Icons.usb_off,
-// //                     color: isConnected ? Colors.green : Colors.red,
-// //                   ),
-// //                   SizedBox(width: 10),
-// //                   Expanded(child: Text(usbStatus)),
-// //                   ElevatedButton(
-// //                     onPressed: onReconnectUsb,
-// //                     child: Text("Retry"),
-// //                   ),
-// //                 ],
-// //               ),
-// //             ),
-// //           ),
-// //           SizedBox(height: 10),
-// //           // Last Sent/Received Strings
-// //           Card(
-// //             child: Padding(
-// //               padding: EdgeInsets.all(16.0),
-// //               child: Column(
-// //                 crossAxisAlignment: CrossAxisAlignment.start,
-// //                 children: [
-// //                   Text(
-// //                     "Communication Log",
-// //                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-// //                   ),
-// //                   SizedBox(height: 10),
-// //                   Text(
-// //                     "Last Sent:",
-// //                     style: TextStyle(fontWeight: FontWeight.bold),
-// //                   ),
-// //                   Container(
-// //                     width: double.infinity,
-// //                     padding: EdgeInsets.all(8),
-// //                     color: Colors.grey[100],
-// //                     child: Text(
-// //                       lastSentString,
-// //                       style: TextStyle(fontFamily: 'Monospace', fontSize: 10),
-// //                     ),
-// //                   ),
-// //                   SizedBox(height: 10),
-// //                   Text(
-// //                     "Last Received:",
-// //                     style: TextStyle(fontWeight: FontWeight.bold),
-// //                   ),
-// //                   Container(
-// //                     width: double.infinity,
-// //                     padding: EdgeInsets.all(8),
-// //                     color: Colors.grey[100],
-// //                     child: Text(
-// //                       lastReceivedString,
-// //                       style: TextStyle(fontFamily: 'Monospace', fontSize: 10),
-// //                     ),
-// //                   ),
-// //                   SizedBox(height: 10),
-// //                   Text(
-// //                     "Buffer: '$incomingBuffer'",
-// //                     style: TextStyle(fontSize: 12, color: Colors.grey),
-// //                   ),
-// //                 ],
-// //               ),
-// //             ),
-// //           ),
-// //           SizedBox(height: 10),
-// //           // Command Palette
-// //           Card(
-// //             child: Padding(
-// //               padding: EdgeInsets.all(16.0),
-// //               child: Column(
-// //                 crossAxisAlignment: CrossAxisAlignment.start,
-// //                 children: [
-// //                   Text(
-// //                     "Command Palette",
-// //                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-// //                   ),
-// //                   SizedBox(height: 10),
-// //                   Row(
-// //                     children: [
-// //                       Expanded(
-// //                         child: TextField(
-// //                           controller: commandController,
-// //                           decoration: InputDecoration(
-// //                             hintText: "Enter custom command...",
-// //                             border: OutlineInputBorder(),
-// //                           ),
-// //                         ),
-// //                       ),
-// //                       SizedBox(width: 10),
-// //                       ElevatedButton(
-// //                         onPressed: onSendCustomCommand,
-// //                         child: Text("Send"),
-// //                       ),
-// //                     ],
-// //                   ),
-// //                   SizedBox(height: 10),
-// //                   Wrap(
-// //                     spacing: 8,
-// //                     children: [
-// //                       ElevatedButton(
-// //                         onPressed: () => onSendCommand("STATUS"),
-// //                         child: Text("STATUS"),
-// //                       ),
-// //                     ],
-// //                   ),
-// //                 ],
-// //               ),
-// //             ),
-// //           ),
-// //         ],
-// //       ),
-// //     );
-// //   }
-// // }
+// // // import 'dart:async';
+// // // import 'dart:typed_data';
+// // // import 'package:flutter/material.dart';
+// // // import 'package:usb_serial/usb_serial.dart';
+
+// // // void main() {
+// // //   runApp(
+// // //     MaterialApp(
+// // //       debugShowCheckedModeBanner: false,
+// // //       title: 'Sensor Control App',
+// // //       theme: ThemeData(primarySwatch: Colors.blue),
+// // //       home: MainControlPage(),
+// // //     ),
+// // //   );
+// // // }
+
+// // // // --- MAIN WIDGET: Manages State, USB, and Navigation ---
+// // // class MainControlPage extends StatefulWidget {
+// // //   @override
+// // //   _MainControlPageState createState() => _MainControlPageState();
+// // // }
+
+// // // class _MainControlPageState extends State<MainControlPage> {
+// // //   // USB State
+// // //   UsbPort? _port;
+// // //   String usbStatus = "Disconnected";
+// // //   bool isConnected = false;
+// // //   String lastSentString = "Nothing sent yet";
+// // //   String lastReceivedString = "Nothing received yet";
+// // //   TextEditingController commandController = TextEditingController();
+
+// // //   // UI State
+// // //   int _selectedIndex = 0;
+// // //   String _incomingBuffer = "";
+
+// // //   @override
+// // //   void initState() {
+// // //     super.initState();
+// // //     _initUsb();
+// // //   }
+
+// // //   @override
+// // //   void dispose() {
+// // //     _port?.close();
+// // //     super.dispose();
+// // //   }
+
+// // //   // --- USB Communication Methods ---
+
+// // //   Future<void> _initUsb() async {
+// // //     try {
+// // //       setState(() {
+// // //         usbStatus = "Scanning for USB devices...";
+// // //       });
+
+// // //       List<UsbDevice> devices = await UsbSerial.listDevices();
+// // //       print("Found ${devices.length} USB devices");
+
+// // //       if (devices.isEmpty) {
+// // //         setState(() {
+// // //           usbStatus = "No USB devices found";
+// // //           isConnected = false;
+// // //         });
+// // //         return;
+// // //       }
+
+// // //       UsbDevice device = devices.first;
+// // //       print("Connecting to: ${device.deviceName}");
+
+// // //       setState(() {
+// // //         usbStatus = "Connecting to ${device.deviceName}...";
+// // //       });
+
+// // //       _port = await device.create();
+// // //       bool open = await _port!.open();
+
+// // //       if (open) {
+// // //         await _port!.setPortParameters(9600, 8, 1, 0);
+// // //         _port!.inputStream?.listen(_onDataReceived);
+
+// // //         setState(() {
+// // //           usbStatus = "Connected to ${device.deviceName}";
+// // //           isConnected = true;
+// // //         });
+
+// // //         print("USB connected successfully");
+// // //         _sendCommand("STATUS");
+// // //       } else {
+// // //         setState(() {
+// // //           usbStatus = "Failed to open USB port";
+// // //           isConnected = false;
+// // //         });
+// // //       }
+// // //     } catch (e) {
+// // //       print("USB Error: $e");
+// // //       setState(() {
+// // //         usbStatus = "Error: $e";
+// // //         isConnected = false;
+// // //       });
+// // //     }
+// // //   }
+
+// // //   void _onDataReceived(Uint8List data) {
+// // //     String str = String.fromCharCodes(data);
+// // //     print("Received RAW chunk: $str");
+
+// // //     _incomingBuffer += str;
+
+// // //     if (_incomingBuffer.contains('\n') ||
+// // //         (_incomingBuffer.startsWith('{') && _incomingBuffer.contains('}'))) {
+// // //       List<String> messages = _incomingBuffer.split('\n');
+
+// // //       for (int i = 0; i < messages.length - 1; i++) {
+// // //         String completeMessage = messages[i].trim();
+// // //         if (completeMessage.isNotEmpty) {
+// // //           _processCompleteMessage(completeMessage);
+// // //         }
+// // //       }
+
+// // //       _incomingBuffer = messages.last;
+// // //     }
+
+// // //     if (_incomingBuffer.startsWith('{') && _incomingBuffer.endsWith('}')) {
+// // //       _processCompleteMessage(_incomingBuffer);
+// // //       _incomingBuffer = "";
+// // //     }
+// // //   }
+
+// // //   void _processCompleteMessage(String completeMessage) {
+// // //     print("Processing complete message: $completeMessage");
+// // //     setState(() {
+// // //       lastReceivedString = completeMessage;
+// // //     });
+// // //   }
+
+// // //   void _sendCommand(String cmd) {
+// // //     if (_port != null && isConnected) {
+// // //       String commandToSend = cmd + "\n";
+// // //       _port!.write(Uint8List.fromList(commandToSend.codeUnits));
+
+// // //       setState(() {
+// // //         lastSentString = commandToSend.trim();
+// // //       });
+
+// // //       print("Sent: $commandToSend");
+// // //     } else {
+// // //       print("Cannot send - USB not connected");
+// // //       setState(() {
+// // //         lastSentString = "FAILED: USB not connected";
+// // //       });
+// // //     }
+// // //   }
+
+// // //   void _sendCustomCommand() {
+// // //     if (commandController.text.isNotEmpty) {
+// // //       _sendCommand(commandController.text);
+// // //       commandController.clear();
+// // //     }
+// // //   }
+
+// // //   void _reconnectUsb() {
+// // //     _initUsb();
+// // //   }
+
+// // //   void _onItemTapped(int index) {
+// // //     setState(() {
+// // //       _selectedIndex = index;
+// // //     });
+// // //   }
+
+// // //   // --- Widget Build ---
+
+// // //   @override
+// // //   Widget build(BuildContext context) {
+// // //     final List<Widget> _widgetOptions = <Widget>[
+// // //       TemperatureControlPage(), // No parameters needed
+// // //       HumidityControlPage(), // No parameters needed
+// // //       LightIntensityPage(), // No parameters needed
+// // //       CommunicationPage(
+// // //         usbStatus: usbStatus,
+// // //         isConnected: isConnected,
+// // //         lastSentString: lastSentString,
+// // //         lastReceivedString: lastReceivedString,
+// // //         incomingBuffer: _incomingBuffer,
+// // //         commandController: commandController,
+// // //         onSendCommand: _sendCommand,
+// // //         onSendCustomCommand: _sendCustomCommand,
+// // //         onReconnectUsb: _reconnectUsb,
+// // //       ),
+// // //     ];
+
+// // //     return Scaffold(
+// // //       appBar: AppBar(
+// // //         title: Text(_getPageTitle(_selectedIndex)),
+// // //         backgroundColor: isConnected ? Colors.green : Colors.red,
+// // //       ),
+// // //       body: _widgetOptions.elementAt(_selectedIndex),
+// // //       bottomNavigationBar: BottomNavigationBar(
+// // //         items: const <BottomNavigationBarItem>[
+// // //           BottomNavigationBarItem(
+// // //             icon: Icon(Icons.thermostat_outlined),
+// // //             label: 'Temperature',
+// // //           ),
+// // //           BottomNavigationBarItem(
+// // //             icon: Icon(Icons.water_drop_outlined),
+// // //             label: 'Humidity',
+// // //           ),
+// // //           BottomNavigationBarItem(
+// // //             icon: Icon(Icons.lightbulb_outline),
+// // //             label: 'Lights',
+// // //           ),
+// // //           BottomNavigationBarItem(icon: Icon(Icons.usb), label: 'Comms'),
+// // //         ],
+// // //         currentIndex: _selectedIndex,
+// // //         selectedItemColor: isConnected ? Colors.green[800] : Colors.red[800],
+// // //         unselectedItemColor: Colors.grey,
+// // //         type: BottomNavigationBarType.fixed,
+// // //         onTap: _onItemTapped,
+// // //       ),
+// // //     );
+// // //   }
+
+// // //   String _getPageTitle(int index) {
+// // //     switch (index) {
+// // //       case 0:
+// // //         return "Temperature Control";
+// // //       case 1:
+// // //         return "Humidity Control";
+// // //       case 2:
+// // //         return "Light Intensity Control";
+// // //       case 3:
+// // //         return "USB Communication";
+// // //       default:
+// // //         return "Sensor Control App";
+// // //     }
+// // //   }
+// // // }
+
+// // // // -----------------------------------------------------------------------------
+// // // // --- TEMPERATURE CONTROL SCREEN (Standalone) ---
+// // // // -----------------------------------------------------------------------------
+
+// // // class TemperatureControlPage extends StatefulWidget {
+// // //   @override
+// // //   _TemperatureControlPageState createState() => _TemperatureControlPageState();
+// // // }
+
+// // // class _TemperatureControlPageState extends State<TemperatureControlPage> {
+// // //   // Temperature state
+// // //   String currentTemp = "--";
+// // //   int setTemperature = 25;
+
+// // //   // USB communication
+// // //   UsbPort? _port;
+// // //   bool isConnected = false;
+// // //   String _incomingBuffer = "";
+
+// // //   @override
+// // //   void initState() {
+// // //     super.initState();
+// // //     _initUsb();
+// // //   }
+
+// // //   @override
+// // //   void dispose() {
+// // //     _port?.close();
+// // //     super.dispose();
+// // //   }
+
+// // //   // USB Initialization
+// // //   Future<void> _initUsb() async {
+// // //     try {
+// // //       List<UsbDevice> devices = await UsbSerial.listDevices();
+// // //       if (devices.isEmpty) {
+// // //         setState(() {
+// // //           isConnected = false;
+// // //         });
+// // //         return;
+// // //       }
+
+// // //       UsbDevice device = devices.first;
+// // //       _port = await device.create();
+// // //       bool open = await _port!.open();
+
+// // //       if (open) {
+// // //         await _port!.setPortParameters(9600, 8, 1, 0);
+// // //         _port!.inputStream?.listen(_onDataReceived);
+
+// // //         setState(() {
+// // //           isConnected = true;
+// // //         });
+
+// // //         _sendCommand("STATUS");
+// // //       }
+// // //     } catch (e) {
+// // //       print("USB Error in TemperatureControlPage: $e");
+// // //       setState(() {
+// // //         isConnected = false;
+// // //       });
+// // //     }
+// // //   }
+
+// // //   void _onDataReceived(Uint8List data) {
+// // //     String str = String.fromCharCodes(data);
+// // //     _incomingBuffer += str;
+
+// // //     if (_incomingBuffer.contains('\n') ||
+// // //         (_incomingBuffer.startsWith('{') && _incomingBuffer.contains('}'))) {
+// // //       List<String> messages = _incomingBuffer.split('\n');
+
+// // //       for (int i = 0; i < messages.length - 1; i++) {
+// // //         String completeMessage = messages[i].trim();
+// // //         if (completeMessage.isNotEmpty) {
+// // //           _processCompleteMessage(completeMessage);
+// // //         }
+// // //       }
+
+// // //       _incomingBuffer = messages.last;
+// // //     }
+
+// // //     if (_incomingBuffer.startsWith('{') && _incomingBuffer.endsWith('}')) {
+// // //       _processCompleteMessage(_incomingBuffer);
+// // //       _incomingBuffer = "";
+// // //     }
+// // //   }
+
+// // //   void _processCompleteMessage(String completeMessage) {
+// // //     _parseStructuredData(completeMessage);
+// // //   }
+
+// // //   void _parseStructuredData(String data) {
+// // //     try {
+// // //       if (data.startsWith('{') && data.endsWith('}')) {
+// // //         String content = data.substring(1, data.length - 1);
+// // //         List<String> pairs = content.split(',');
+
+// // //         Map<String, dynamic> parsedData = {};
+
+// // //         for (String pair in pairs) {
+// // //           List<String> keyValue = pair.split(':');
+// // //           if (keyValue.length == 2) {
+// // //             String key = keyValue[0].trim();
+// // //             String value = keyValue[1].trim();
+// // //             parsedData[key] = value;
+// // //           }
+// // //         }
+
+// // //         setState(() {
+// // //           // Parse temperature (C_OT_TEMP:239 = 23.9°C)
+// // //           if (parsedData.containsKey('C_OT_TEMP')) {
+// // //             String tempStr = parsedData['C_OT_TEMP'].toString();
+// // //             if (tempStr.length >= 2) {
+// // //               currentTemp =
+// // //                   '${tempStr.substring(0, tempStr.length - 1)}.${tempStr.substring(tempStr.length - 1)}';
+// // //             } else {
+// // //               currentTemp = tempStr;
+// // //             }
+// // //           }
+
+// // //           // Parse set temperature (S_TEMP_SETPT:215 = 21.5°C)
+// // //           if (parsedData.containsKey('S_TEMP_SETPT')) {
+// // //             String setTempStr = parsedData['S_TEMP_SETPT'].toString();
+// // //             if (setTempStr.length >= 2) {
+// // //               setTemperature = int.parse(
+// // //                 setTempStr.substring(0, setTempStr.length - 1),
+// // //               );
+// // //             }
+// // //           }
+// // //         });
+// // //       }
+// // //     } catch (e) {
+// // //       print("Error parsing temperature data: $e");
+// // //     }
+// // //   }
+
+// // //   void _sendCommand(String cmd) {
+// // //     if (_port != null && isConnected) {
+// // //       String commandToSend = cmd + "\n";
+// // //       _port!.write(Uint8List.fromList(commandToSend.codeUnits));
+// // //       print("Temperature Page Sent: $commandToSend");
+// // //     }
+// // //   }
+
+// // //   void _sendCompleteStructure() {
+// // //     List<String> pairs = [];
+
+// // //     pairs.add('SR_WSL:200001');
+// // //     pairs.add('C_PRESSURE_1:000');
+// // //     pairs.add('C_PRESSURE_1_SIGN_BIT:1');
+// // //     pairs.add('C_PRESSURE_2:000');
+// // //     pairs.add('C_PRESSURE_2_SIGN_BIT:1');
+
+// // //     String tempValue = currentTemp != "--"
+// // //         ? (double.tryParse(currentTemp) ?? 25.0).toInt().toString().padLeft(
+// // //             3,
+// // //             '0',
+// // //           )
+// // //         : "250";
+
+// // //     pairs.add('C_OT_TEMP:$tempValue');
+// // //     pairs.add('C_RH:500'); // Default humidity
+
+// // //     for (int i = 1; i <= 10; i++) {
+// // //       pairs.add('F_Sensor_${i}_FAULT_BIT:0');
+// // //       pairs.add('S_Sensor_${i}_NO_NC_SETTING:1');
+// // //       pairs.add('S_Light_${i}_ON_OFF:0'); // Default lights off
+// // //       pairs.add('S_Light_${i}_Intensity:000');
+// // //     }
+
+// // //     pairs.add('S_IOT_TIMER:0060');
+// // //     pairs.add(
+// // //       'S_TEMP_SETPT:${(setTemperature * 10).toString().padLeft(3, '0')}',
+// // //     );
+// // //     pairs.add('S_RH_SETPT:500'); // Default humidity setpoint
+
+// // //     String command = '{${pairs.join(',')}}';
+// // //     _sendCommand(command);
+// // //   }
+
+// // //   void _setTemperature(int value) {
+// // //     setState(() {
+// // //       setTemperature = value;
+// // //     });
+// // //     _sendCompleteStructure();
+// // //   }
+
+// // //   Widget _buildSetPointControl(
+// // //     String title,
+// // //     int value,
+// // //     int min,
+// // //     int max,
+// // //     int step,
+// // //     ValueChanged<int> onChanged,
+// // //   ) {
+// // //     return Card(
+// // //       margin: EdgeInsets.all(8.0),
+// // //       child: Padding(
+// // //         padding: const EdgeInsets.all(16.0),
+// // //         child: Column(
+// // //           children: [
+// // //             Text(
+// // //               title,
+// // //               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+// // //             ),
+// // //             SizedBox(height: 10),
+// // //             Text(
+// // //               '$value',
+// // //               style: TextStyle(
+// // //                 fontSize: 48,
+// // //                 fontWeight: FontWeight.bold,
+// // //                 color: Colors.blue,
+// // //               ),
+// // //             ),
+// // //             SizedBox(height: 10),
+// // //             Row(
+// // //               mainAxisAlignment: MainAxisAlignment.center,
+// // //               children: [
+// // //                 IconButton(
+// // //                   icon: Icon(Icons.remove_circle_outline, size: 30),
+// // //                   onPressed: () => value > min ? onChanged(value - step) : null,
+// // //                 ),
+// // //                 SizedBox(width: 20),
+// // //                 IconButton(
+// // //                   icon: Icon(Icons.add_circle_outline, size: 30),
+// // //                   onPressed: () => value < max ? onChanged(value + step) : null,
+// // //                 ),
+// // //               ],
+// // //             ),
+// // //           ],
+// // //         ),
+// // //       ),
+// // //     );
+// // //   }
+
+// // //   @override
+// // //   Widget build(BuildContext context) {
+// // //     return SingleChildScrollView(
+// // //       padding: EdgeInsets.all(16.0),
+// // //       child: Column(
+// // //         crossAxisAlignment: CrossAxisAlignment.stretch,
+// // //         children: <Widget>[
+// // //           // Connection Status
+// // //           Card(
+// // //             color: isConnected ? Colors.green[50] : Colors.red[50],
+// // //             child: Padding(
+// // //               padding: const EdgeInsets.all(12.0),
+// // //               child: Row(
+// // //                 children: [
+// // //                   Icon(
+// // //                     isConnected ? Icons.usb : Icons.usb_off,
+// // //                     color: isConnected ? Colors.green : Colors.red,
+// // //                   ),
+// // //                   SizedBox(width: 8),
+// // //                   Text(
+// // //                     isConnected ? "USB Connected" : "USB Disconnected",
+// // //                     style: TextStyle(fontWeight: FontWeight.bold),
+// // //                   ),
+// // //                 ],
+// // //               ),
+// // //             ),
+// // //           ),
+// // //           SizedBox(height: 16),
+
+// // //           // Current Temperature
+// // //           Card(
+// // //             color: Colors.blue[50],
+// // //             child: Padding(
+// // //               padding: const EdgeInsets.all(20.0),
+// // //               child: Column(
+// // //                 children: [
+// // //                   Text("Current Temperature", style: TextStyle(fontSize: 16)),
+// // //                   Text(
+// // //                     "$currentTemp °C",
+// // //                     style: TextStyle(
+// // //                       fontSize: 40,
+// // //                       fontWeight: FontWeight.bold,
+// // //                       color: Colors.blue,
+// // //                     ),
+// // //                   ),
+// // //                 ],
+// // //               ),
+// // //             ),
+// // //           ),
+// // //           SizedBox(height: 20),
+
+// // //           // Set Point Control
+// // //           Text(
+// // //             "Temperature Set Point",
+// // //             style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+// // //             textAlign: TextAlign.center,
+// // //           ),
+// // //           _buildSetPointControl(
+// // //             "Set Temp (°C)",
+// // //             setTemperature,
+// // //             15,
+// // //             35,
+// // //             1,
+// // //             _setTemperature,
+// // //           ),
+// // //           SizedBox(height: 20),
+
+// // //           // Action Buttons
+// // //           Row(
+// // //             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+// // //             children: [
+// // //               ElevatedButton(
+// // //                 onPressed: () => _sendCommand("STATUS"),
+// // //                 child: Text("Refresh Status"),
+// // //               ),
+// // //               ElevatedButton(
+// // //                 onPressed: _sendCompleteStructure,
+// // //                 child: Text("Send All Data"),
+// // //               ),
+// // //             ],
+// // //           ),
+// // //           SizedBox(height: 20),
+
+// // //           Text(
+// // //             "Set points are sent upon change.",
+// // //             textAlign: TextAlign.center,
+// // //             style: TextStyle(
+// // //               fontStyle: FontStyle.italic,
+// // //               color: Colors.grey[600],
+// // //             ),
+// // //           ),
+// // //         ],
+// // //       ),
+// // //     );
+// // //   }
+// // // }
+
+// // // // -----------------------------------------------------------------------------
+// // // // --- HUMIDITY CONTROL SCREEN (Standalone) ---
+// // // // -----------------------------------------------------------------------------
+
+// // // class HumidityControlPage extends StatefulWidget {
+// // //   @override
+// // //   _HumidityControlPageState createState() => _HumidityControlPageState();
+// // // }
+
+// // // class _HumidityControlPageState extends State<HumidityControlPage> {
+// // //   // Humidity state
+// // //   String currentHum = "--";
+// // //   int setHumidity = 50;
+
+// // //   // USB communication
+// // //   UsbPort? _port;
+// // //   bool isConnected = false;
+// // //   String _incomingBuffer = "";
+
+// // //   @override
+// // //   void initState() {
+// // //     super.initState();
+// // //     _initUsb();
+// // //   }
+
+// // //   @override
+// // //   void dispose() {
+// // //     _port?.close();
+// // //     super.dispose();
+// // //   }
+
+// // //   // USB Initialization
+// // //   Future<void> _initUsb() async {
+// // //     try {
+// // //       List<UsbDevice> devices = await UsbSerial.listDevices();
+// // //       if (devices.isEmpty) {
+// // //         setState(() {
+// // //           isConnected = false;
+// // //         });
+// // //         return;
+// // //       }
+
+// // //       UsbDevice device = devices.first;
+// // //       _port = await device.create();
+// // //       bool open = await _port!.open();
+
+// // //       if (open) {
+// // //         await _port!.setPortParameters(9600, 8, 1, 0);
+// // //         _port!.inputStream?.listen(_onDataReceived);
+
+// // //         setState(() {
+// // //           isConnected = true;
+// // //         });
+
+// // //         _sendCommand("STATUS");
+// // //       }
+// // //     } catch (e) {
+// // //       print("USB Error in HumidityControlPage: $e");
+// // //       setState(() {
+// // //         isConnected = false;
+// // //       });
+// // //     }
+// // //   }
+
+// // //   void _onDataReceived(Uint8List data) {
+// // //     String str = String.fromCharCodes(data);
+// // //     _incomingBuffer += str;
+
+// // //     if (_incomingBuffer.contains('\n') ||
+// // //         (_incomingBuffer.startsWith('{') && _incomingBuffer.contains('}'))) {
+// // //       List<String> messages = _incomingBuffer.split('\n');
+
+// // //       for (int i = 0; i < messages.length - 1; i++) {
+// // //         String completeMessage = messages[i].trim();
+// // //         if (completeMessage.isNotEmpty) {
+// // //           _processCompleteMessage(completeMessage);
+// // //         }
+// // //       }
+
+// // //       _incomingBuffer = messages.last;
+// // //     }
+
+// // //     if (_incomingBuffer.startsWith('{') && _incomingBuffer.endsWith('}')) {
+// // //       _processCompleteMessage(_incomingBuffer);
+// // //       _incomingBuffer = "";
+// // //     }
+// // //   }
+
+// // //   void _processCompleteMessage(String completeMessage) {
+// // //     _parseStructuredData(completeMessage);
+// // //   }
+
+// // //   void _parseStructuredData(String data) {
+// // //     try {
+// // //       if (data.startsWith('{') && data.endsWith('}')) {
+// // //         String content = data.substring(1, data.length - 1);
+// // //         List<String> pairs = content.split(',');
+
+// // //         Map<String, dynamic> parsedData = {};
+
+// // //         for (String pair in pairs) {
+// // //           List<String> keyValue = pair.split(':');
+// // //           if (keyValue.length == 2) {
+// // //             String key = keyValue[0].trim();
+// // //             String value = keyValue[1].trim();
+// // //             parsedData[key] = value;
+// // //           }
+// // //         }
+
+// // //         setState(() {
+// // //           // Parse humidity (C_RH:295 = 29.5%)
+// // //           if (parsedData.containsKey('C_RH')) {
+// // //             String humStr = parsedData['C_RH'].toString();
+// // //             if (humStr.length >= 2) {
+// // //               currentHum =
+// // //                   '${humStr.substring(0, humStr.length - 1)}.${humStr.substring(humStr.length - 1)}';
+// // //             } else {
+// // //               currentHum = humStr;
+// // //             }
+// // //           }
+
+// // //           // Parse set humidity (S_RH_SETPT:784 = 78.4%)
+// // //           if (parsedData.containsKey('S_RH_SETPT')) {
+// // //             String setHumStr = parsedData['S_RH_SETPT'].toString();
+// // //             if (setHumStr.length >= 2) {
+// // //               setHumidity = int.parse(
+// // //                 setHumStr.substring(0, setHumStr.length - 1),
+// // //               );
+// // //             }
+// // //           }
+// // //         });
+// // //       }
+// // //     } catch (e) {
+// // //       print("Error parsing humidity data: $e");
+// // //     }
+// // //   }
+
+// // //   void _sendCommand(String cmd) {
+// // //     if (_port != null && isConnected) {
+// // //       String commandToSend = cmd + "\n";
+// // //       _port!.write(Uint8List.fromList(commandToSend.codeUnits));
+// // //       print("Humidity Page Sent: $commandToSend");
+// // //     }
+// // //   }
+
+// // //   void _sendCompleteStructure() {
+// // //     List<String> pairs = [];
+
+// // //     pairs.add('SR_WSL:200001');
+// // //     pairs.add('C_PRESSURE_1:000');
+// // //     pairs.add('C_PRESSURE_1_SIGN_BIT:1');
+// // //     pairs.add('C_PRESSURE_2:000');
+// // //     pairs.add('C_PRESSURE_2_SIGN_BIT:1');
+
+// // //     pairs.add('C_OT_TEMP:250'); // Default temperature
+// // //     String humValue = currentHum != "--"
+// // //         ? (double.tryParse(currentHum) ?? 50.0).toInt().toString().padLeft(
+// // //             3,
+// // //             '0',
+// // //           )
+// // //         : "500";
+
+// // //     pairs.add('C_RH:$humValue');
+
+// // //     for (int i = 1; i <= 10; i++) {
+// // //       pairs.add('F_Sensor_${i}_FAULT_BIT:0');
+// // //       pairs.add('S_Sensor_${i}_NO_NC_SETTING:1');
+// // //       pairs.add('S_Light_${i}_ON_OFF:0'); // Default lights off
+// // //       pairs.add('S_Light_${i}_Intensity:000');
+// // //     }
+
+// // //     pairs.add('S_IOT_TIMER:0060');
+// // //     pairs.add('S_TEMP_SETPT:250'); // Default temperature setpoint
+// // //     pairs.add('S_RH_SETPT:${(setHumidity * 10).toString().padLeft(3, '0')}');
+
+// // //     String command = '{${pairs.join(',')}}';
+// // //     _sendCommand(command);
+// // //   }
+
+// // //   void _setHumidity(int value) {
+// // //     setState(() {
+// // //       setHumidity = value;
+// // //     });
+// // //     _sendCompleteStructure();
+// // //   }
+
+// // //   Widget _buildSetPointControl(
+// // //     String title,
+// // //     int value,
+// // //     int min,
+// // //     int max,
+// // //     int step,
+// // //     ValueChanged<int> onChanged,
+// // //   ) {
+// // //     return Card(
+// // //       margin: EdgeInsets.all(8.0),
+// // //       child: Padding(
+// // //         padding: const EdgeInsets.all(16.0),
+// // //         child: Column(
+// // //           children: [
+// // //             Text(
+// // //               title,
+// // //               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+// // //             ),
+// // //             SizedBox(height: 10),
+// // //             Text(
+// // //               '$value',
+// // //               style: TextStyle(
+// // //                 fontSize: 48,
+// // //                 fontWeight: FontWeight.bold,
+// // //                 color: Colors.teal,
+// // //               ),
+// // //             ),
+// // //             SizedBox(height: 10),
+// // //             Row(
+// // //               mainAxisAlignment: MainAxisAlignment.center,
+// // //               children: [
+// // //                 IconButton(
+// // //                   icon: Icon(Icons.remove_circle_outline, size: 30),
+// // //                   onPressed: () => value > min ? onChanged(value - step) : null,
+// // //                 ),
+// // //                 SizedBox(width: 20),
+// // //                 IconButton(
+// // //                   icon: Icon(Icons.add_circle_outline, size: 30),
+// // //                   onPressed: () => value < max ? onChanged(value + step) : null,
+// // //                 ),
+// // //               ],
+// // //             ),
+// // //           ],
+// // //         ),
+// // //       ),
+// // //     );
+// // //   }
+
+// // //   @override
+// // //   Widget build(BuildContext context) {
+// // //     return SingleChildScrollView(
+// // //       padding: EdgeInsets.all(16.0),
+// // //       child: Column(
+// // //         crossAxisAlignment: CrossAxisAlignment.stretch,
+// // //         children: <Widget>[
+// // //           // Connection Status
+// // //           Card(
+// // //             color: isConnected ? Colors.green[50] : Colors.red[50],
+// // //             child: Padding(
+// // //               padding: const EdgeInsets.all(12.0),
+// // //               child: Row(
+// // //                 children: [
+// // //                   Icon(
+// // //                     isConnected ? Icons.usb : Icons.usb_off,
+// // //                     color: isConnected ? Colors.green : Colors.red,
+// // //                   ),
+// // //                   SizedBox(width: 8),
+// // //                   Text(
+// // //                     isConnected ? "USB Connected" : "USB Disconnected",
+// // //                     style: TextStyle(fontWeight: FontWeight.bold),
+// // //                   ),
+// // //                 ],
+// // //               ),
+// // //             ),
+// // //           ),
+// // //           SizedBox(height: 16),
+
+// // //           // Current Humidity
+// // //           Card(
+// // //             color: Colors.teal[50],
+// // //             child: Padding(
+// // //               padding: const EdgeInsets.all(20.0),
+// // //               child: Column(
+// // //                 children: [
+// // //                   Text(
+// // //                     "Current Relative Humidity",
+// // //                     style: TextStyle(fontSize: 16),
+// // //                   ),
+// // //                   Text(
+// // //                     "$currentHum %",
+// // //                     style: TextStyle(
+// // //                       fontSize: 40,
+// // //                       fontWeight: FontWeight.bold,
+// // //                       color: Colors.teal,
+// // //                     ),
+// // //                   ),
+// // //                 ],
+// // //               ),
+// // //             ),
+// // //           ),
+// // //           SizedBox(height: 20),
+
+// // //           // Set Point Control
+// // //           Text(
+// // //             "Humidity Set Point",
+// // //             style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+// // //             textAlign: TextAlign.center,
+// // //           ),
+// // //           _buildSetPointControl(
+// // //             "Set Humidity (%)",
+// // //             setHumidity,
+// // //             30,
+// // //             80,
+// // //             1,
+// // //             _setHumidity,
+// // //           ),
+// // //           SizedBox(height: 20),
+
+// // //           // Action Buttons
+// // //           Row(
+// // //             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+// // //             children: [
+// // //               ElevatedButton(
+// // //                 onPressed: () => _sendCommand("STATUS"),
+// // //                 child: Text("Refresh Status"),
+// // //               ),
+// // //               ElevatedButton(
+// // //                 onPressed: _sendCompleteStructure,
+// // //                 child: Text("Send All Data"),
+// // //               ),
+// // //             ],
+// // //           ),
+// // //           SizedBox(height: 20),
+
+// // //           Text(
+// // //             "Set points are sent upon change.",
+// // //             textAlign: TextAlign.center,
+// // //             style: TextStyle(
+// // //               fontStyle: FontStyle.italic,
+// // //               color: Colors.grey[600],
+// // //             ),
+// // //           ),
+// // //         ],
+// // //       ),
+// // //     );
+// // //   }
+// // // }
+
+// // // // -----------------------------------------------------------------------------
+// // // // --- LIGHT INTENSITY CONTROL SCREEN (Standalone) ---
+// // // // -----------------------------------------------------------------------------
+
+// // // class LightIntensityPage extends StatefulWidget {
+// // //   @override
+// // //   _LightIntensityPageState createState() => _LightIntensityPageState();
+// // // }
+
+// // // class _LightIntensityPageState extends State<LightIntensityPage> {
+// // //   // Light state
+// // //   List<int> intensities = List.filled(10, 0);
+// // //   List<bool> lightStates = List.filled(10, false);
+// // //   bool nightMode = false;
+
+// // //   // USB communication
+// // //   UsbPort? _port;
+// // //   bool isConnected = false;
+// // //   String _incomingBuffer = "";
+
+// // //   @override
+// // //   void initState() {
+// // //     super.initState();
+// // //     _initUsb();
+// // //   }
+
+// // //   @override
+// // //   void dispose() {
+// // //     _port?.close();
+// // //     super.dispose();
+// // //   }
+
+// // //   // USB Initialization
+// // //   Future<void> _initUsb() async {
+// // //     try {
+// // //       List<UsbDevice> devices = await UsbSerial.listDevices();
+// // //       if (devices.isEmpty) {
+// // //         setState(() {
+// // //           isConnected = false;
+// // //         });
+// // //         return;
+// // //       }
+
+// // //       UsbDevice device = devices.first;
+// // //       _port = await device.create();
+// // //       bool open = await _port!.open();
+
+// // //       if (open) {
+// // //         await _port!.setPortParameters(9600, 8, 1, 0);
+// // //         _port!.inputStream?.listen(_onDataReceived);
+
+// // //         setState(() {
+// // //           isConnected = true;
+// // //         });
+
+// // //         _sendCommand("STATUS");
+// // //       }
+// // //     } catch (e) {
+// // //       print("USB Error in LightIntensityPage: $e");
+// // //       setState(() {
+// // //         isConnected = false;
+// // //       });
+// // //     }
+// // //   }
+
+// // //   void _onDataReceived(Uint8List data) {
+// // //     String str = String.fromCharCodes(data);
+// // //     _incomingBuffer += str;
+
+// // //     if (_incomingBuffer.contains('\n') ||
+// // //         (_incomingBuffer.startsWith('{') && _incomingBuffer.contains('}'))) {
+// // //       List<String> messages = _incomingBuffer.split('\n');
+
+// // //       for (int i = 0; i < messages.length - 1; i++) {
+// // //         String completeMessage = messages[i].trim();
+// // //         if (completeMessage.isNotEmpty) {
+// // //           _processCompleteMessage(completeMessage);
+// // //         }
+// // //       }
+
+// // //       _incomingBuffer = messages.last;
+// // //     }
+
+// // //     if (_incomingBuffer.startsWith('{') && _incomingBuffer.endsWith('}')) {
+// // //       _processCompleteMessage(_incomingBuffer);
+// // //       _incomingBuffer = "";
+// // //     }
+// // //   }
+
+// // //   void _processCompleteMessage(String completeMessage) {
+// // //     _parseStructuredData(completeMessage);
+// // //   }
+
+// // //   void _parseStructuredData(String data) {
+// // //     try {
+// // //       if (data.startsWith('{') && data.endsWith('}')) {
+// // //         String content = data.substring(1, data.length - 1);
+// // //         List<String> pairs = content.split(',');
+
+// // //         Map<String, dynamic> parsedData = {};
+
+// // //         for (String pair in pairs) {
+// // //           List<String> keyValue = pair.split(':');
+// // //           if (keyValue.length == 2) {
+// // //             String key = keyValue[0].trim();
+// // //             String value = keyValue[1].trim();
+// // //             parsedData[key] = value;
+// // //           }
+// // //         }
+
+// // //         setState(() {
+// // //           // Parse light ON/OFF states and intensities
+// // //           bool anyLightOn = false;
+// // //           for (int i = 1; i <= 10; i++) {
+// // //             String lightOnOffKey = 'S_Light_${i}_ON_OFF';
+// // //             if (parsedData.containsKey(lightOnOffKey)) {
+// // //               bool state = parsedData[lightOnOffKey] == '1';
+// // //               lightStates[i - 1] = state;
+// // //               if (state) anyLightOn = true;
+// // //             }
+
+// // //             String intensityKey = 'S_Light_${i}_Intensity';
+// // //             if (parsedData.containsKey(intensityKey)) {
+// // //               try {
+// // //                 intensities[i - 1] = int.parse(
+// // //                   parsedData[intensityKey].toString(),
+// // //                 );
+// // //               } catch (e) {
+// // //                 print(
+// // //                   "Error parsing intensity for light $i: ${parsedData[intensityKey]}",
+// // //                 );
+// // //               }
+// // //             }
+// // //           }
+
+// // //           nightMode = !anyLightOn;
+// // //         });
+// // //       }
+// // //     } catch (e) {
+// // //       print("Error parsing light data: $e");
+// // //     }
+// // //   }
+
+// // //   void _sendCommand(String cmd) {
+// // //     if (_port != null && isConnected) {
+// // //       String commandToSend = cmd + "\n";
+// // //       _port!.write(Uint8List.fromList(commandToSend.codeUnits));
+// // //       print("Light Page Sent: $commandToSend");
+// // //     }
+// // //   }
+
+// // //   void _sendCompleteStructure() {
+// // //     List<String> pairs = [];
+
+// // //     pairs.add('SR_WSL:200001');
+// // //     pairs.add('C_PRESSURE_1:000');
+// // //     pairs.add('C_PRESSURE_1_SIGN_BIT:1');
+// // //     pairs.add('C_PRESSURE_2:000');
+// // //     pairs.add('C_PRESSURE_2_SIGN_BIT:1');
+
+// // //     pairs.add('C_OT_TEMP:250'); // Default temperature
+// // //     pairs.add('C_RH:500'); // Default humidity
+
+// // //     for (int i = 1; i <= 10; i++) {
+// // //       pairs.add('F_Sensor_${i}_FAULT_BIT:0');
+// // //       pairs.add('S_Sensor_${i}_NO_NC_SETTING:1');
+// // //       pairs.add('S_Light_${i}_ON_OFF:${lightStates[i - 1] ? '1' : '0'}');
+// // //       pairs.add(
+// // //         'S_Light_${i}_Intensity:${intensities[i - 1].toString().padLeft(3, '0')}',
+// // //       );
+// // //     }
+
+// // //     pairs.add('S_IOT_TIMER:0060');
+// // //     pairs.add('S_TEMP_SETPT:250'); // Default temperature setpoint
+// // //     pairs.add('S_RH_SETPT:500'); // Default humidity setpoint
+
+// // //     String command = '{${pairs.join(',')}}';
+// // //     _sendCommand(command);
+// // //   }
+
+// // //   void _handleLightChange(int lightIndex, bool? turnOn, int? intensity) {
+// // //     setState(() {
+// // //       if (turnOn != null) {
+// // //         lightStates[lightIndex] = turnOn;
+// // //         if (!turnOn) intensities[lightIndex] = 0;
+// // //       }
+// // //       if (intensity != null) {
+// // //         intensities[lightIndex] = intensity;
+// // //         if (intensity > 0) lightStates[lightIndex] = true;
+// // //       }
+// // //     });
+// // //     _sendCompleteStructure();
+// // //   }
+
+// // //   void _toggleNightMode() {
+// // //     setState(() {
+// // //       nightMode = !nightMode;
+// // //       if (nightMode) {
+// // //         for (int i = 0; i < 10; i++) {
+// // //           lightStates[i] = false;
+// // //           intensities[i] = 0;
+// // //         }
+// // //       }
+// // //     });
+// // //     _sendCompleteStructure();
+// // //   }
+
+// // //   Widget _buildLightControl(int index) {
+// // //     return Card(
+// // //       margin: EdgeInsets.symmetric(vertical: 4.0),
+// // //       child: ListTile(
+// // //         leading: Icon(
+// // //           Icons.lightbulb,
+// // //           color: lightStates[index] ? Colors.amber : Colors.grey,
+// // //         ),
+// // //         title: Text("Light ${index + 1}"),
+// // //         subtitle: Slider(
+// // //           value: intensities[index].toDouble(),
+// // //           min: 0,
+// // //           max: 100,
+// // //           divisions: 100,
+// // //           label: "${intensities[index]}%",
+// // //           onChanged: (val) {
+// // //             _handleLightChange(index, null, val.toInt());
+// // //           },
+// // //         ),
+// // //         trailing: Switch(
+// // //           value: lightStates[index],
+// // //           onChanged: (val) {
+// // //             _handleLightChange(index, val, null);
+// // //           },
+// // //         ),
+// // //       ),
+// // //     );
+// // //   }
+
+// // //   @override
+// // //   Widget build(BuildContext context) {
+// // //     return SingleChildScrollView(
+// // //       padding: EdgeInsets.all(16.0),
+// // //       child: Column(
+// // //         crossAxisAlignment: CrossAxisAlignment.stretch,
+// // //         children: <Widget>[
+// // //           // Connection Status
+// // //           Card(
+// // //             color: isConnected ? Colors.green[50] : Colors.red[50],
+// // //             child: Padding(
+// // //               padding: const EdgeInsets.all(12.0),
+// // //               child: Row(
+// // //                 children: [
+// // //                   Icon(
+// // //                     isConnected ? Icons.usb : Icons.usb_off,
+// // //                     color: isConnected ? Colors.green : Colors.red,
+// // //                   ),
+// // //                   SizedBox(width: 8),
+// // //                   Text(
+// // //                     isConnected ? "USB Connected" : "USB Disconnected",
+// // //                     style: TextStyle(fontWeight: FontWeight.bold),
+// // //                   ),
+// // //                 ],
+// // //               ),
+// // //             ),
+// // //           ),
+// // //           SizedBox(height: 16),
+
+// // //           // Night Mode
+// // //           Card(
+// // //             color: nightMode ? Colors.grey[200] : Colors.yellow[100],
+// // //             child: ListTile(
+// // //               title: Text("Night Mode"),
+// // //               subtitle: Text(
+// // //                 nightMode ? "All lights are OFF" : "Lights are ON",
+// // //               ),
+// // //               trailing: Switch(
+// // //                 value: nightMode,
+// // //                 onChanged: (v) => _toggleNightMode(),
+// // //               ),
+// // //             ),
+// // //           ),
+// // //           Divider(height: 20, thickness: 2),
+
+// // //           // Action Buttons
+// // //           Row(
+// // //             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+// // //             children: [
+// // //               ElevatedButton(
+// // //                 onPressed: () => _sendCommand("STATUS"),
+// // //                 child: Text("Refresh Status"),
+// // //               ),
+// // //               ElevatedButton(
+// // //                 onPressed: _sendCompleteStructure,
+// // //                 child: Text("Send All Data"),
+// // //               ),
+// // //             ],
+// // //           ),
+// // //           SizedBox(height: 20),
+
+// // //           Text(
+// // //             "Individual Light Controls (10)",
+// // //             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+// // //             textAlign: TextAlign.center,
+// // //           ),
+// // //           SizedBox(height: 10),
+// // //           ...List.generate(10, (index) => _buildLightControl(index)),
+// // //         ],
+// // //       ),
+// // //     );
+// // //   }
+// // // }
+
+// // // // -----------------------------------------------------------------------------
+// // // // --- COMMUNICATION SCREEN ---
+// // // // -----------------------------------------------------------------------------
+
+// // // class CommunicationPage extends StatelessWidget {
+// // //   final String usbStatus;
+// // //   final bool isConnected;
+// // //   final String lastSentString;
+// // //   final String lastReceivedString;
+// // //   final String incomingBuffer;
+// // //   final TextEditingController commandController;
+// // //   final Function(String) onSendCommand;
+// // //   final VoidCallback onSendCustomCommand;
+// // //   final VoidCallback onReconnectUsb;
+
+// // //   CommunicationPage({
+// // //     required this.usbStatus,
+// // //     required this.isConnected,
+// // //     required this.lastSentString,
+// // //     required this.lastReceivedString,
+// // //     required this.incomingBuffer,
+// // //     required this.commandController,
+// // //     required this.onSendCommand,
+// // //     required this.onSendCustomCommand,
+// // //     required this.onReconnectUsb,
+// // //   });
+
+// // //   @override
+// // //   Widget build(BuildContext context) {
+// // //     return SingleChildScrollView(
+// // //       padding: EdgeInsets.all(16.0),
+// // //       child: Column(
+// // //         crossAxisAlignment: CrossAxisAlignment.stretch,
+// // //         children: <Widget>[
+// // //           // USB Status
+// // //           Card(
+// // //             color: isConnected ? Colors.green[50] : Colors.red[50],
+// // //             child: Padding(
+// // //               padding: EdgeInsets.all(16.0),
+// // //               child: Row(
+// // //                 children: [
+// // //                   Icon(
+// // //                     isConnected ? Icons.usb : Icons.usb_off,
+// // //                     color: isConnected ? Colors.green : Colors.red,
+// // //                   ),
+// // //                   SizedBox(width: 10),
+// // //                   Expanded(child: Text(usbStatus)),
+// // //                   ElevatedButton(
+// // //                     onPressed: onReconnectUsb,
+// // //                     child: Text("Retry"),
+// // //                   ),
+// // //                 ],
+// // //               ),
+// // //             ),
+// // //           ),
+// // //           SizedBox(height: 10),
+// // //           // Last Sent/Received Strings
+// // //           Card(
+// // //             child: Padding(
+// // //               padding: EdgeInsets.all(16.0),
+// // //               child: Column(
+// // //                 crossAxisAlignment: CrossAxisAlignment.start,
+// // //                 children: [
+// // //                   Text(
+// // //                     "Communication Log",
+// // //                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+// // //                   ),
+// // //                   SizedBox(height: 10),
+// // //                   Text(
+// // //                     "Last Sent:",
+// // //                     style: TextStyle(fontWeight: FontWeight.bold),
+// // //                   ),
+// // //                   Container(
+// // //                     width: double.infinity,
+// // //                     padding: EdgeInsets.all(8),
+// // //                     color: Colors.grey[100],
+// // //                     child: Text(
+// // //                       lastSentString,
+// // //                       style: TextStyle(fontFamily: 'Monospace', fontSize: 10),
+// // //                     ),
+// // //                   ),
+// // //                   SizedBox(height: 10),
+// // //                   Text(
+// // //                     "Last Received:",
+// // //                     style: TextStyle(fontWeight: FontWeight.bold),
+// // //                   ),
+// // //                   Container(
+// // //                     width: double.infinity,
+// // //                     padding: EdgeInsets.all(8),
+// // //                     color: Colors.grey[100],
+// // //                     child: Text(
+// // //                       lastReceivedString,
+// // //                       style: TextStyle(fontFamily: 'Monospace', fontSize: 10),
+// // //                     ),
+// // //                   ),
+// // //                   SizedBox(height: 10),
+// // //                   Text(
+// // //                     "Buffer: '$incomingBuffer'",
+// // //                     style: TextStyle(fontSize: 12, color: Colors.grey),
+// // //                   ),
+// // //                 ],
+// // //               ),
+// // //             ),
+// // //           ),
+// // //           SizedBox(height: 10),
+// // //           // Command Palette
+// // //           Card(
+// // //             child: Padding(
+// // //               padding: EdgeInsets.all(16.0),
+// // //               child: Column(
+// // //                 crossAxisAlignment: CrossAxisAlignment.start,
+// // //                 children: [
+// // //                   Text(
+// // //                     "Command Palette",
+// // //                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+// // //                   ),
+// // //                   SizedBox(height: 10),
+// // //                   Row(
+// // //                     children: [
+// // //                       Expanded(
+// // //                         child: TextField(
+// // //                           controller: commandController,
+// // //                           decoration: InputDecoration(
+// // //                             hintText: "Enter custom command...",
+// // //                             border: OutlineInputBorder(),
+// // //                           ),
+// // //                         ),
+// // //                       ),
+// // //                       SizedBox(width: 10),
+// // //                       ElevatedButton(
+// // //                         onPressed: onSendCustomCommand,
+// // //                         child: Text("Send"),
+// // //                       ),
+// // //                     ],
+// // //                   ),
+// // //                   SizedBox(height: 10),
+// // //                   Wrap(
+// // //                     spacing: 8,
+// // //                     children: [
+// // //                       ElevatedButton(
+// // //                         onPressed: () => onSendCommand("STATUS"),
+// // //                         child: Text("STATUS"),
+// // //                       ),
+// // //                     ],
+// // //                   ),
+// // //                 ],
+// // //               ),
+// // //             ),
+// // //           ),
+// // //         ],
+// // //       ),
+// // //     );
+// // //   }
+// // // }
 // import 'dart:async';
 // import 'dart:typed_data';
 // import 'package:analog_clock/analog_clock.dart';
@@ -1396,7 +1396,6 @@
 // import 'package:url_launcher/url_launcher.dart';
 // import 'package:shared_preferences/shared_preferences.dart';
 // import 'package:usb_serial/usb_serial.dart';
-// import 'audio_provider.dart'; // Import the AudioProvider
 
 // class Home extends StatefulWidget {
 //   const Home({super.key});
@@ -1562,9 +1561,11 @@
 //   }
 
 //   void _toggleMute() {
-//     final audioProvider = Provider.of<AudioProvider>(context, listen: false);
+//     // final audioProvider = Provider.of<AudioProvider>(context, listen: false);
 //     audioProvider.toggleMute();
-//     _showSuccessSnackbar(audioProvider.isMuted ? "Audio muted" : "Audio unmuted");
+//     _showSuccessSnackbar(
+//       audioProvider.isMuted ? "Audio muted" : "Audio unmuted",
+//     );
 //   }
 
 //   // USB Initialization
@@ -2346,8 +2347,8 @@
 //                             ? (_currentTemp == "--" ? "--" : '$_currentTemp°C')
 //                             : itemNumber == 2
 //                             ? (_currentHumidity == "--"
-//                                 ? "--"
-//                                 : '$_currentHumidity%')
+//                                   ? "--"
+//                                   : '$_currentHumidity%')
 //                             : null,
 //                         itemNumber: itemNumber,
 //                       ),
@@ -2456,7 +2457,7 @@
 
 //   @override
 //   Widget build(BuildContext context) {
-//     final audioProvider = Provider.of<AudioProvider>(context);
+//     // final audioProvider = Provider.of<AudioProvider>(context);
 //     WidgetsBinding.instance.addPostFrameCallback((_) {
 //       debugPrint(
 //         "=== BUILD CALLED - Current Fault Status (Sensors 1-7): ${_hasSensorFault()} ===",
@@ -2680,7 +2681,9 @@
 //                   const SizedBox(width: 12),
 //                   IconButton(
 //                     icon: Icon(
-//                       audioProvider.isMuted ? Icons.volume_off : Icons.volume_up,
+//                       audioProvider.isMuted
+//                           ? Icons.volume_off
+//                           : Icons.volume_up,
 //                       size: 42,
 //                       color: Colors.white,
 //                     ),
