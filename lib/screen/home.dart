@@ -15,6 +15,7 @@ import 'package:surgeon_control_panel/patient%20info/clean/clean_pro.dart';
 import 'package:surgeon_control_panel/patient%20info/dashboard/dashboard.dart';
 import 'package:surgeon_control_panel/patient%20info/dashboard/store/storeitems.dart';
 import 'package:surgeon_control_panel/patient%20info/dashboard_items/patient_list.dart';
+import 'package:surgeon_control_panel/provider/audioProvider.dart';
 import 'package:surgeon_control_panel/provider/stopwatch_provider.dart';
 import 'package:surgeon_control_panel/provider/home_provider.dart';
 import 'package:surgeon_control_panel/screen/feather/cctv.dart';
@@ -178,6 +179,14 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
       debugPrint("USB Error: $e");
       homeProvider.updateUsbStatus(false, "Error: $e");
     }
+  }
+
+  void _toggleMute() {
+    final audioProvider = Provider.of<AudioProvider>(context, listen: false);
+    audioProvider.toggleMute();
+    _showSuccessSnackbar(
+      audioProvider.isMuted ? "Audio muted" : "Audio unmuted",
+    );
   }
 
   void _onDataReceived(dynamic chunk) {
@@ -463,7 +472,10 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
         Get.to(() => HospitalStoreScreen(), transition: Transition.rightToLeft);
         break;
       case 11:
-        Get.to(() => HospitalCleaningApp(), transition: Transition.rightToLeft);
+        Get.to(
+          () => RoomCleanlinessContainer(),
+          transition: Transition.rightToLeft,
+        );
         break;
       case 12:
         Get.to(() => PatientDashboard(), transition: Transition.rightToLeft);
@@ -712,7 +724,7 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     final homeProvider = Provider.of<HomeProvider>(context);
-
+    final audioProvider = Provider.of<AudioProvider>(context);
     return Scaffold(
       body: Stack(
         children: [
@@ -960,41 +972,81 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
                   child: Row(
                     children: [
                       Stack(
+                        alignment: Alignment.center,
                         children: [
-                          // 1. The main content (what you want to see the effect over)
-                          // This is where your background image or other content goes.
-                          // For a visible effect, this content should be behind the glass
-                          // e.g., an image filling the screen.
+                          // 1. BACKGROUND CONTENT (To be blurred)
+                          // Make sure this path ('assets/background.jpg') is a real, colorful image
+                          // and that the asset is declared in your pubspec.yaml file.
+                          // Image.asset(
+                          //   'assets/image.png',
+                          //   fit: BoxFit.cover,
+                          //   height: 100,
+                          //   width: 300,
+                          // ),
                           Center(
-                            // Center is just an example; put this where you need it
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(
                                 20.0,
-                              ), // Optional: rounded corners for the 'glass'
+                              ), // Creates the glass shape
                               child: BackdropFilter(
+                                // Applies the blur to the content *behind* this widget
                                 filter: ImageFilter.blur(
-                                  sigmaX:
-                                      10.0, // Adjust for horizontal blur intensity
-                                  sigmaY:
-                                      10.0, // Adjust for vertical blur intensity
+                                  sigmaX: 10.0, // Horizontal blur intensity
+                                  sigmaY: 10.0, // Vertical blur intensity
                                 ),
                                 child: Container(
-                                  height: 100,
-                                  width: 300,
-                                  // 2. The semi-transparent overlay (the 'glass' color)
+                                  height: 120,
+                                  width: 270,
+                                  // Defines the look of the 'glass'
                                   decoration: BoxDecoration(
-                                    color: Colors.white.withOpacity(
-                                      0.2,
-                                    ), // White with 30% opacity
+                                    // Semi-transparent color is essential for the frosted look
+                                    color: Colors.white.withOpacity(0.3),
                                     border: Border.all(
-                                      color: Colors.white.withOpacity(
-                                        0.3,
-                                      ), // Optional: subtle white border
+                                      // Optional: A subtle border for a 'lit edge' effect
+                                      color: Colors.white.withOpacity(0.2),
                                       width: 1.0,
                                     ),
                                   ),
                                   child: Center(
-                                    // Center the content inside the glass container
+                                    // Your image content
+                                    child: Image.asset(
+                                      'assets/image.png',
+                                      height: 100,
+                                      width: 300,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+
+                          // 2. YOUR GLASS PANEL (The code block you provided)
+                          Center(
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(
+                                20.0,
+                              ), // Creates the glass shape
+                              child: BackdropFilter(
+                                // Applies the blur to the content *behind* this widget
+                                filter: ImageFilter.blur(
+                                  sigmaX: 10.0, // Horizontal blur intensity
+                                  sigmaY: 10.0, // Vertical blur intensity
+                                ),
+                                child: Container(
+                                  height: 100,
+                                  width: 250,
+                                  // Defines the look of the 'glass'
+                                  decoration: BoxDecoration(
+                                    // Semi-transparent color is essential for the frosted look
+                                    color: Colors.white.withOpacity(0.3),
+                                    border: Border.all(
+                                      // Optional: A subtle border for a 'lit edge' effect
+                                      color: Colors.white.withOpacity(0.2),
+                                      width: 1.0,
+                                    ),
+                                  ),
+                                  child: Center(
+                                    // Your image content
                                     child: Image.asset(
                                       'assets/app_logo-removebg-preview.png',
                                       height: 100,
@@ -1059,6 +1111,17 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
                           ),
                         ],
                       ),
+                      IconButton(
+                        icon: Icon(
+                          audioProvider.isMuted
+                              ? Icons.volume_off
+                              : Icons.volume_up,
+                          size: 42,
+                          color: Colors.white,
+                        ),
+                        onPressed: _toggleMute,
+                        tooltip: audioProvider.isMuted ? "Unmute" : "Mute",
+                      ),
                       const SizedBox(width: 12),
                       IconButton(
                         icon: const Icon(
@@ -1076,19 +1139,19 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
                           );
                         },
                       ),
-                      IconButton(
-                        icon: const Icon(
-                          Icons.settings,
-                          size: 42,
-                          color: Colors.white,
-                        ),
-                        onPressed: () {
-                          Get.to(
-                            () => ProfilePage1(),
-                            transition: Transition.rightToLeft,
-                          );
-                        },
-                      ),
+                      // IconButton(
+                      //   icon: const Icon(
+                      //     Icons.settings,
+                      //     size: 42,
+                      //     color: Colors.white,
+                      //   ),
+                      //   onPressed: () {
+                      //     Get.to(
+                      //       () => ProfilePage1(),
+                      //       transition: Transition.rightToLeft,
+                      //     );
+                      //   },
+                      // ),
                     ],
                   ),
                 ),

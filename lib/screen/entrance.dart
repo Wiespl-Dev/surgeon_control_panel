@@ -184,10 +184,89 @@ class _ORStatusMonitorState extends State<ORStatusMonitor>
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Image.asset(
-                            "assets/app_logo-removebg-preview.png",
-                            height: 70,
+                          Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              Center(
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(
+                                    20.0,
+                                  ), // Creates the glass shape
+                                  child: BackdropFilter(
+                                    // Applies the blur to the content *behind* this widget
+                                    filter: ImageFilter.blur(
+                                      sigmaX: 10.0, // Horizontal blur intensity
+                                      sigmaY: 10.0, // Vertical blur intensity
+                                    ),
+                                    child: Container(
+                                      height: 80,
+                                      width: 200,
+                                      // Defines the look of the 'glass'
+                                      decoration: BoxDecoration(
+                                        // Semi-transparent color is essential for the frosted look
+                                        color: Colors.white.withOpacity(0.3),
+                                        border: Border.all(
+                                          // Optional: A subtle border for a 'lit edge' effect
+                                          color: Colors.white.withOpacity(0.2),
+                                          width: 1.0,
+                                        ),
+                                      ),
+                                      child: Center(
+                                        // Your image content
+                                        child: Image.asset(
+                                          'assets/image.png',
+                                          height: 70,
+                                          width: 300,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+
+                              // 2. YOUR GLASS PANEL (The code block you provided)
+                              Center(
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(
+                                    20.0,
+                                  ), // Creates the glass shape
+                                  child: BackdropFilter(
+                                    // Applies the blur to the content *behind* this widget
+                                    filter: ImageFilter.blur(
+                                      sigmaX: 10.0, // Horizontal blur intensity
+                                      sigmaY: 10.0, // Vertical blur intensity
+                                    ),
+                                    child: Container(
+                                      height: 70,
+                                      width: 180,
+                                      // Defines the look of the 'glass'
+                                      decoration: BoxDecoration(
+                                        // Semi-transparent color is essential for the frosted look
+                                        color: Colors.white.withOpacity(0.3),
+                                        border: Border.all(
+                                          // Optional: A subtle border for a 'lit edge' effect
+                                          color: Colors.white.withOpacity(0.2),
+                                          width: 1.0,
+                                        ),
+                                      ),
+                                      child: Center(
+                                        // Your image content
+                                        child: Image.asset(
+                                          'assets/app_logo-removebg-preview.png',
+                                          height: 70,
+                                          width: 300,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
+                          // Image.asset(
+                          //   "assets/app_logo-removebg-preview.png",
+                          //   height: 70,
+                          // ),
                           Row(
                             children: [
                               // USB status indicator
@@ -196,7 +275,7 @@ class _ORStatusMonitorState extends State<ORStatusMonitor>
                                 height: 12,
                                 decoration: BoxDecoration(
                                   color: provider.isConnected
-                                      ? Colors.greenAccent
+                                      ? Colors.transparent
                                       : Colors.redAccent,
                                   shape: BoxShape.circle,
                                 ),

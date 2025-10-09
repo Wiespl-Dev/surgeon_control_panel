@@ -21,10 +21,10 @@ class _DraggableGridScreenState extends State<DraggableGridScreen> {
 
   // Surgery-related YouTube videos
   final List<String> youtubeUrls = [
-    "https://www.youtube.com/watch?v=osgndmRBjsM", // Orthopedic surgery example
-    "https://www.youtube.com/watch?v=_MTER8jQSFQ", // Knee replacement surgery
-    "https://www.youtube.com/watch?v=sPyZRkkxqNs", // Hip replacement surgery
-    "https://www.youtube.com/watch?v=lp4eRla1vFg", // Shoulder surgery
+    "http://192.168.0.160:9081", // Orthopedic surgery example
+    "http://192.168.0.160:9082", // Knee replacement surgery
+    "http://192.168.0.160:9083", // Hip replacement surgery
+    "http://192.168.0.160:9084", // Shoulder surgery
   ];
 
   // Web controllers

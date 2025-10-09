@@ -12,6 +12,7 @@ import 'package:surgeon_control_panel/provider/audioProvider.dart';
 import 'package:surgeon_control_panel/provider/home_provider.dart';
 import 'package:surgeon_control_panel/provider/light_provider.dart';
 import 'package:surgeon_control_panel/provider/or_status_provider.dart';
+import 'package:surgeon_control_panel/provider/room_cleanliness_provider.dart';
 import 'package:surgeon_control_panel/screen/cssd.dart';
 import 'package:surgeon_control_panel/screen/entrance.dart';
 import 'package:surgeon_control_panel/screen/home.dart';
@@ -80,6 +81,7 @@ Future<void> main() async {
         ChangeNotifierProvider(create: (context) => HomeProvider()),
         ChangeNotifierProvider(create: (context) => LightProvider()),
         ChangeNotifierProvider(create: (context) => ORStatusProvider()),
+        ChangeNotifierProvider(create: (context) => RoomCleanlinessProvider()),
       ],
       child: const MyApp(),
     ),
