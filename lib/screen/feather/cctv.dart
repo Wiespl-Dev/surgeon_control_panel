@@ -9,6 +9,7 @@ import 'package:flutter/rendering.dart';
 import 'package:get/get.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:surgeon_control_panel/screen/feather/allcctv/allcctv.dart';
+import 'package:surgeon_control_panel/screen/rec/recording_screen.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
@@ -16,6 +17,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_screen_recording/flutter_screen_recording.dart';
 
 class VideoSwitcherScreen extends StatefulWidget {
   const VideoSwitcherScreen({super.key});
@@ -25,10 +27,8 @@ class VideoSwitcherScreen extends StatefulWidget {
 }
 
 class _VideoSwitcherScreenState extends State<VideoSwitcherScreen> {
-  // late YoutubePlayerController _controller;
-
   int selectedVideoIndex = 0;
-  final String baseUrl = 'http://192.168.0.43:5000'; // Your local server IP
+  final String baseUrl = 'http://192.168.0.43:5000';
   bool isRecording = false;
   bool isConnected = false;
 
@@ -36,46 +36,153 @@ class _VideoSwitcherScreenState extends State<VideoSwitcherScreen> {
   String? _usbPath;
   bool _usbConnected = false;
   GlobalKey _repaintKey = GlobalKey();
-  Timer? _recordingTimer;
-  int _recordingSeconds = 0; // Elapsed recording time
-  bool _isRecordingScreen = false;
   List<String> _recordedFiles = [];
+
+  // WebView controllers
+  late WebViewController _obsController;
+  late WebViewController _motionEyeController;
+  late WebViewController _motionEyeControllerr;
+  late WebViewController _motionEyeControllerrr;
+  int _selectedStreamIndex = 0;
+
+  // Message variables
+  final TextEditingController _messageController = TextEditingController();
+  bool _isSending = false;
+  String? _lastStatus;
+  String? _lastSid;
+
+  // CCTV list for recording selection
+  final List<Map<String, dynamic>> cctvList = [
+    {
+      'name': 'CCTV 1',
+      'controller': null, // Will be set in initState
+      'url': 'http://192.168.0.146:9081',
+    },
+    {'name': 'CCTV 2', 'controller': null, 'url': 'http://192.168.0.146:9082'},
+    {'name': 'CCTV 3', 'controller': null, 'url': 'http://192.168.0.146:9083'},
+    {'name': 'CCTV 4', 'controller': null, 'url': 'http://192.168.0.146:9083'},
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+
+    // Initialize WebView controllers
+    _obsController = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..loadRequest(Uri.parse(cctvList[0]['url']));
+
+    _motionEyeController = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..loadRequest(Uri.parse(cctvList[1]['url']));
+
+    _motionEyeControllerr = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..loadRequest(Uri.parse(cctvList[2]['url']));
+
+    _motionEyeControllerrr = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..loadRequest(Uri.parse(cctvList[3]['url']));
+
+    // Assign controllers to CCTV list
+    cctvList[0]['controller'] = _obsController;
+    cctvList[1]['controller'] = _motionEyeController;
+    cctvList[2]['controller'] = _motionEyeControllerr;
+    cctvList[3]['controller'] = _motionEyeControllerrr;
+
+    checkConnection();
+    _requestPermissions();
+    _loadUSBPath();
+  }
 
   Future<void> checkConnection() async {
     try {
-      print("Sending request to $baseUrl/status");
-
       final response = await http
           .get(Uri.parse('$baseUrl/status'))
           .timeout(Duration(seconds: 5));
 
-      print("Response status: ${response.statusCode}");
-      print("Response body: ${response.body}");
-
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        print("Decoded response: $data");
-
         setState(() {
           isConnected = data['connected'].toString().toLowerCase() == 'true';
         });
-
-        print("isConnected set to: $isConnected");
       } else {
         setState(() => isConnected = false);
-        print("Connection failed with status: ${response.statusCode}");
       }
-    } on TimeoutException {
-      setState(() => isConnected = false);
-      print("Connection timed out - server not responding");
     } catch (e) {
       setState(() => isConnected = false);
-      print("Connection error: $e");
     }
   }
 
+  // NEW: Show CCTV selection dialog for recording
+  void _showRecordingSelectionDialog() {
+    if (!_usbConnected || _usbPath == null) {
+      Fluttertoast.showToast(
+        msg: "Please select USB storage first",
+        gravity: ToastGravity.BOTTOM,
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text("Select CCTV to Record"),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: cctvList.length,
+            itemBuilder: (context, index) {
+              final cctv = cctvList[index];
+              return ListTile(
+                leading: Icon(Icons.videocam, color: Colors.blue),
+                title: Text(cctv['name']),
+                subtitle: Text("Tap to start recording"),
+                onTap: () {
+                  Navigator.pop(context); // Close dialog
+                  _startCCTVRecording(cctv);
+                },
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text("Cancel"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // NEW: Start recording for specific CCTV
+  void _startCCTVRecording(Map<String, dynamic> cctv) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => RecordingScreen(
+          cctvUrl: cctv['url'], // Changed parameter name
+          cctvName: cctv['name'],
+          usbPath: _usbPath,
+        ),
+      ),
+    ).then((savedFilePath) {
+      if (savedFilePath != null) {
+        setState(() {
+          _recordedFiles.add(savedFilePath);
+        });
+        Fluttertoast.showToast(
+          msg: "Recording completed and saved!",
+          gravity: ToastGravity.BOTTOM,
+          backgroundColor: Colors.green,
+        );
+      }
+    });
+  }
+
   Future<void> startRecording() async {
-    print('nsnnss');
     try {
       final response = await http.get(Uri.parse('$baseUrl/start_recording'));
       final data = jsonDecode(response.body);
@@ -99,31 +206,20 @@ class _VideoSwitcherScreenState extends State<VideoSwitcherScreen> {
     }
   }
 
-  String? selectedScene;
-  Future<void> switchScene(String sceneName) async {
-    try {
-      print("Switching to scene: $sceneName");
-      final response = await http.get(
-        Uri.parse('$baseUrl/switch_scene/${Uri.encodeComponent(sceneName)}'),
-      );
-      print("Response: ${response.body}");
-      final data = jsonDecode(response.body);
-      if (data['status'] != null) {
-        setState(() => selectedScene = sceneName);
-      } else {
-        print("Switch error: ${data['error']}");
-      }
-    } catch (e) {
-      print("Error switching scene: $e");
-    }
-  }
-
-  // Recording Functions
   Future<void> _requestPermissions() async {
-    await Permission.storage.request();
-    await Permission.manageExternalStorage.request();
-    await Permission.microphone.request();
-    await Permission.camera.request();
+    Map<Permission, PermissionStatus> statuses = await [
+      Permission.storage,
+      Permission.microphone,
+      Permission.camera,
+      Permission.systemAlertWindow,
+    ].request();
+
+    if (statuses[Permission.storage]!.isDenied) {
+      Fluttertoast.showToast(
+        msg: "Storage permission is required for recording",
+        gravity: ToastGravity.BOTTOM,
+      );
+    }
   }
 
   Future<void> _loadUSBPath() async {
@@ -165,78 +261,7 @@ class _VideoSwitcherScreenState extends State<VideoSwitcherScreen> {
     }
   }
 
-  Future<void> _startScreenRecording() async {
-    if (!_usbConnected || _usbPath == null) {
-      Fluttertoast.showToast(
-        msg: "Please select USB storage first",
-        gravity: ToastGravity.BOTTOM,
-      );
-      return;
-    }
-
-    setState(() {
-      _isRecordingScreen = true;
-      _recordingSeconds = 0;
-    });
-
-    Fluttertoast.showToast(
-      msg: "Screen recording started...",
-      gravity: ToastGravity.BOTTOM,
-    );
-
-    // In a real implementation, you would use a screen recording package
-    // For now, we'll simulate the recording process
-
-    // Start recording timer
-    _recordingTimer = Timer.periodic(Duration(seconds: 1), (timer) {
-      setState(() {
-        _recordingSeconds++;
-      });
-    });
-  }
-
-  Future<void> _stopScreenRecording() async {
-    if (!_isRecordingScreen) return;
-
-    setState(() {
-      _isRecordingScreen = false;
-    });
-
-    _recordingTimer?.cancel();
-    _recordingTimer = null;
-
-    // Simulate saving the recording
-    try {
-      final fileName = 'recording_${DateTime.now().millisecondsSinceEpoch}.mp4';
-      final recordingsDir = Directory(path.join(_usbPath!, 'Recordings'));
-
-      if (!await recordingsDir.exists()) {
-        await recordingsDir.create(recursive: true);
-      }
-
-      final outputPath = path.join(recordingsDir.path, fileName);
-
-      // In a real implementation, you would save the actual recording file here
-      // For simulation, we'll just create an empty file
-      final file = File(outputPath);
-      await file.writeAsString("Simulated recording file");
-
-      setState(() {
-        _recordedFiles.add(outputPath);
-      });
-
-      Fluttertoast.showToast(
-        msg: "Recording saved: $fileName",
-        gravity: ToastGravity.BOTTOM,
-      );
-    } catch (e) {
-      Fluttertoast.showToast(
-        msg: "Failed to save recording: $e",
-        gravity: ToastGravity.BOTTOM,
-      );
-    }
-  }
-
+  // FIXED: Proper screenshot implementation
   Future<void> _takeScreenshot() async {
     try {
       if (!_usbConnected || _usbPath == null) {
@@ -247,27 +272,46 @@ class _VideoSwitcherScreenState extends State<VideoSwitcherScreen> {
         return;
       }
 
-      // In a real implementation, you would capture the screen using RepaintBoundary
-      // For now, we'll simulate it
+      await Future.delayed(Duration(milliseconds: 200));
+
+      RenderRepaintBoundary boundary =
+          _repaintKey.currentContext!.findRenderObject()
+              as RenderRepaintBoundary;
+
+      ui.Image image = await boundary.toImage(pixelRatio: 3.0);
+      ByteData? byteData = await image.toByteData(
+        format: ui.ImageByteFormat.png,
+      );
+
+      if (byteData == null) {
+        throw Exception("Failed to capture screenshot bytes");
+      }
+
+      Uint8List pngBytes = byteData.buffer.asUint8List();
+
       final screenshotDir = Directory(path.join(_usbPath!, 'Screenshots'));
-      if (!await screenshotDir.exists())
+      if (!await screenshotDir.exists()) {
         await screenshotDir.create(recursive: true);
+      }
 
+      final cctvName = cctvList[_selectedStreamIndex]['name'];
       final fileName =
-          'screenshot_${DateTime.now().millisecondsSinceEpoch}.png';
+          '${cctvName}_screenshot_${DateTime.now().millisecondsSinceEpoch}.png';
       final file = File(path.join(screenshotDir.path, fileName));
-
-      // Create a simulated screenshot file
-      await file.writeAsString("Simulated screenshot data");
+      await file.writeAsBytes(pngBytes);
 
       Fluttertoast.showToast(
-        msg: "Screenshot saved: $fileName",
+        msg:
+            "Screenshot saved: $fileName\nSize: ${file.lengthSync() ~/ 1024} KB",
         gravity: ToastGravity.BOTTOM,
+        backgroundColor: Colors.green,
       );
     } catch (e) {
+      print("Failed to capture screenshot: $e");
       Fluttertoast.showToast(
-        msg: "Failed to capture screenshot: $e",
+        msg: "Failed to capture screenshot",
         gravity: ToastGravity.BOTTOM,
+        backgroundColor: Colors.red,
       );
     }
   }
@@ -290,7 +334,12 @@ class _VideoSwitcherScreenState extends State<VideoSwitcherScreen> {
       return;
     }
 
-    final files = recordingsDir.listSync().whereType<File>().toList();
+    final files = recordingsDir
+        .listSync()
+        .whereType<File>()
+        .where((file) => file.path.toLowerCase().endsWith('.mp4'))
+        .toList();
+
     if (files.isEmpty) {
       Fluttertoast.showToast(
         msg: "No recordings found",
@@ -302,7 +351,7 @@ class _VideoSwitcherScreenState extends State<VideoSwitcherScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text("Recorded Files"),
+        title: Text("Recorded Videos"),
         content: SizedBox(
           width: double.maxFinite,
           child: ListView.builder(
@@ -312,14 +361,15 @@ class _VideoSwitcherScreenState extends State<VideoSwitcherScreen> {
               final file = files[index];
               final fileSize = file.lengthSync();
               return ListTile(
+                leading: Icon(Icons.videocam, color: Colors.blue),
                 title: Text(path.basename(file.path)),
-                subtitle: Text("${fileSize ~/ 1024} KB"),
+                subtitle: Text("${fileSize ~/ (1024 * 1024)} MB"),
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     IconButton(
-                      icon: Icon(Icons.play_arrow),
-                      onPressed: () {}, // You can implement playback here
+                      icon: Icon(Icons.share),
+                      onPressed: () => _shareFile(file),
                     ),
                     IconButton(
                       icon: Icon(Icons.delete),
@@ -349,25 +399,14 @@ class _VideoSwitcherScreenState extends State<VideoSwitcherScreen> {
     );
   }
 
-  late WebViewController _obsController;
-  late WebViewController _motionEyeController;
-  late WebViewController _motionEyeControllerr;
-  late WebViewController _motionEyeControllerrr;
-  // late YoutubePlayerController _youtubeController;
-  int _selectedStreamIndex = 0; // 0 = OBS, 1 = MotionEye, 2 = YouTube
+  void _shareFile(File file) {
+    Share.shareXFiles([XFile(file.path)], text: 'Check out this recording');
+  }
 
-  final List<String> youtubeUrls = [
-    "https://www.youtube.com/watch?v=dQw4w9WgXcQ", // example video
-  ];
-
-  final TextEditingController _messageController = TextEditingController();
-  bool _isSending = false;
-  String? _lastStatus;
-  String? _lastSid;
-
+  // Message methods
   Future<void> _sendMessage() async {
     if (_messageController.text.isEmpty) {
-      _showSnackBar('Please enter phone number and message');
+      _showSnackBar('Please enter a message');
       return;
     }
 
@@ -377,7 +416,6 @@ class _VideoSwitcherScreenState extends State<VideoSwitcherScreen> {
       _lastSid = null;
     });
 
-    // Simulate message sending
     await Future.delayed(Duration(seconds: 2));
 
     setState(() {
@@ -502,76 +540,36 @@ class _VideoSwitcherScreenState extends State<VideoSwitcherScreen> {
   }
 
   @override
-  void initState() {
-    super.initState();
-    checkConnection();
-    _requestPermissions();
-    _loadUSBPath();
-
-    _obsController = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..loadRequest(Uri.parse("http://192.168.0.160:9081"));
-
-    // MotionEye Stream WebView
-    _motionEyeController = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..loadRequest(Uri.parse("http://192.168.0.160:9082"));
-    _motionEyeControllerr = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..loadRequest(Uri.parse("http://192.168.0.160:9083"));
-    _motionEyeControllerrr = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..loadRequest(Uri.parse("http://192.168.0.160:9084"));
-  }
-
-  @override
   void dispose() {
-    // _youtubeController.dispose();
-    _recordingTimer?.cancel();
+    _messageController.dispose();
     super.dispose();
   }
 
   Widget _buildStreamView() {
-    switch (_selectedStreamIndex) {
-      case 0:
-        return RepaintBoundary(
-          key: _repaintKey,
-          child: WebViewWidget(controller: _obsController),
-        );
-      case 1:
-        return RepaintBoundary(
-          key: _repaintKey,
-          child: WebViewWidget(controller: _motionEyeController),
-        );
-      case 2:
-        return RepaintBoundary(
-          key: _repaintKey,
-          child: WebViewWidget(controller: _motionEyeControllerr),
-        );
-      default:
-        return RepaintBoundary(
-          key: _repaintKey,
-          child: WebViewWidget(controller: _motionEyeControllerrr),
-        );
-    }
+    return RepaintBoundary(
+      key: _repaintKey,
+      child: Container(
+        color: Colors.black,
+        child: _getWebViewByIndex(_selectedStreamIndex),
+      ),
+    );
   }
 
-  Widget _buildSwitchButton(String label, int index) {
-    return ElevatedButton(
-      onPressed: () {
-        setState(() {
-          _selectedStreamIndex = index;
-        });
-      },
-      child: Text(label),
-    );
+  Widget _getWebViewByIndex(int index) {
+    switch (index) {
+      case 0:
+        return WebViewWidget(controller: _obsController);
+      case 1:
+        return WebViewWidget(controller: _motionEyeController);
+      case 2:
+        return WebViewWidget(controller: _motionEyeControllerr);
+      default:
+        return WebViewWidget(controller: _motionEyeControllerrr);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    String timerText =
-        "${(_recordingSeconds ~/ 60).toString().padLeft(2, '0')}:${(_recordingSeconds % 60).toString().padLeft(2, '0')}";
-
     return Scaffold(
       body: Row(
         children: [
@@ -592,17 +590,7 @@ class _VideoSwitcherScreenState extends State<VideoSwitcherScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.start,
                 children: [
-                  // Center(
-                  //   child: Text(
-                  //     '✅ ${'connect_to'.tr} to WIESPL',
-                  //     style: TextStyle(
-                  //       fontWeight: FontWeight.bold,
-                  //       fontSize: 16,
-                  //       color: isConnected ? Colors.green : Colors.green,
-                  //     ),
-                  //   ),
-                  // ),
-                  SizedBox(height: 25),
+                  const SizedBox(height: 25),
                   Expanded(
                     flex: 1,
                     child: Container(
@@ -620,7 +608,7 @@ class _VideoSwitcherScreenState extends State<VideoSwitcherScreen> {
                         children: [
                           const SizedBox(height: 16),
                           const Text(
-                            "CCTV",
+                            "OR Camera",
                             style: TextStyle(
                               fontSize: 20,
                               fontWeight: FontWeight.bold,
@@ -635,10 +623,10 @@ class _VideoSwitcherScreenState extends State<VideoSwitcherScreen> {
                                 horizontal: 12,
                               ),
                               children: [
-                                buildTvItem("${'cctv'.tr}1", 0),
-                                buildTvItem("${'cctv'.tr} 2", 1),
-                                buildTvItem("${'cctv'.tr} 3", 2),
-                                buildTvItem("${'cctv'.tr} 4", 3),
+                                buildTvItem("C arm", 0),
+                                buildTvItem("Scopes", 1),
+                                buildTvItem("OT Light Camera", 2),
+                                buildTvItem("Navigation system", 3),
                               ],
                             ),
                           ),
@@ -646,13 +634,10 @@ class _VideoSwitcherScreenState extends State<VideoSwitcherScreen> {
                       ),
                     ),
                   ),
-
                   Padding(
                     padding: const EdgeInsets.only(bottom: 16.0),
                     child: ElevatedButton(
-                      onPressed: () {
-                        Navigator.pop(context);
-                      },
+                      onPressed: () => Navigator.pop(context),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.red,
                         shape: RoundedRectangleBorder(
@@ -696,10 +681,13 @@ class _VideoSwitcherScreenState extends State<VideoSwitcherScreen> {
                 children: [
                   const SizedBox(height: 10),
                   const Text(
-                    "Dr. Ajay Kothari",
+                    "Dr. Rajesh mundhad",
                     style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                   ),
-                  const Text("Orthopaedic OT", style: TextStyle(fontSize: 14)),
+                  const Text(
+                    "Pulse Clinc and Hospital",
+                    style: TextStyle(fontSize: 14),
+                  ),
                   const SizedBox(height: 6),
 
                   Expanded(
@@ -722,46 +710,25 @@ class _VideoSwitcherScreenState extends State<VideoSwitcherScreen> {
                           runSpacing: 8,
                           children: [
                             buildControlBtn(
-                              "start".tr,
-                              onPressed: () {
-                                print(" pressed");
-                                startRecording();
-                              },
+                              "Start Recording",
+                              onPressed: startRecording,
+                              icon: Icons.play_arrow,
                             ),
                             buildControlBtn(
-                              "stop".tr,
-                              onPressed: () {
-                                print("STARTTTTT");
-                                stopRecording();
-                              },
-                              icon: isRecording
-                                  ? Icons.record_voice_over_rounded
-                                  : null,
-                            ),
-                            // Screen recording buttons
-                            buildControlBtn(
-                              _isRecordingScreen
-                                  ? "Recording... $timerText"
-                                  : "Screen Record",
-                              onPressed: _isRecordingScreen
-                                  ? null
-                                  : _startScreenRecording,
-                              icon: _isRecordingScreen
-                                  ? Icons.circle
-                                  : Icons.fiber_manual_record,
-                            ),
-                            buildControlBtn(
-                              "Stop Screen Rec",
-                              onPressed: _isRecordingScreen
-                                  ? _stopScreenRecording
-                                  : null,
+                              "Stop Recording",
+                              onPressed: stopRecording,
                               icon: Icons.stop,
                             ),
+                            // CHANGED: Now shows CCTV selection dialog
                             buildControlBtn(
-                              "message".tr,
-                              onPressed: () {
-                                _showMessageDialog();
-                              },
+                              "Record CCTV",
+                              onPressed: _showRecordingSelectionDialog,
+                              icon: Icons.videocam,
+                            ),
+                            buildControlBtn(
+                              "Send Message",
+                              onPressed: _showMessageDialog,
+                              icon: Icons.message,
                             ),
                           ],
                         ),
@@ -772,13 +739,13 @@ class _VideoSwitcherScreenState extends State<VideoSwitcherScreen> {
                           runSpacing: 8,
                           children: [
                             buildControlBtn(
-                              "task_ss".tr,
+                              "Take Screenshot",
                               icon: Icons.camera_alt,
                               onPressed: _takeScreenshot,
                             ),
                             buildControlBtn(
-                              "gallery".tr,
-                              icon: Icons.photo_library,
+                              "View Recordings",
+                              icon: Icons.video_library,
                               onPressed: _viewRecordings,
                             ),
                             buildControlBtn(
@@ -787,7 +754,7 @@ class _VideoSwitcherScreenState extends State<VideoSwitcherScreen> {
                               onPressed: _selectUSBDirectory,
                             ),
                             buildControlBtn(
-                              "share".tr,
+                              "Share",
                               icon: Icons.share,
                               onPressed: () {
                                 Share.share(
@@ -840,42 +807,18 @@ class _VideoSwitcherScreenState extends State<VideoSwitcherScreen> {
                       padding: const EdgeInsets.symmetric(horizontal: 12),
                       children: [
                         InkWell(
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => DraggableGridScreen(),
-                              ),
-                            );
-                          },
-                          child: buildTvItemm("TV 1", 0),
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => DraggableGridScreen(),
+                            ),
+                          ),
+                          child: buildTvItemm("Screen 1", 0),
                         ),
-                        buildTvItemm("TV 2", 1),
+                        buildTvItemm("Screen 2", 1),
                       ],
                     ),
                   ),
-                  // Padding(
-                  //   padding: const EdgeInsets.only(bottom: 12),
-                  //   child: ElevatedButton(
-                  //     onPressed: () {
-                  //       // Navigator.push(
-                  //       //     context,
-                  //       //     MaterialPageRoute(
-                  //       //       builder: (context) => YouTubeGridScreen(),
-                  //       //     ));
-                  //     },
-                  //     style: ElevatedButton.styleFrom(
-                  //       backgroundColor: Colors.green,
-                  //     ),
-                  //     child: const Text(
-                  //       "APPLY",
-                  //       style: TextStyle(
-                  //         color: Colors.white,
-                  //         fontWeight: FontWeight.bold,
-                  //       ),
-                  //     ),
-                  //   ),
-                  // ),
                 ],
               ),
             ),
@@ -885,39 +828,27 @@ class _VideoSwitcherScreenState extends State<VideoSwitcherScreen> {
     );
   }
 
-  Widget buildControlBtnn(String label, {IconData? icon}) {
-    return SizedBox(
-      width: 120,
-      child: ElevatedButton.icon(
-        onPressed: () {},
-        icon: icon != null ? Icon(icon, size: 16) : const SizedBox(width: 0),
-        label: Text(label, overflow: TextOverflow.ellipsis),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.white,
-          foregroundColor: Colors.black,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(30),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-        ),
-      ),
-    );
-  }
-
   Widget buildControlBtn(
     String label, {
     IconData? icon,
     VoidCallback? onPressed,
+    Color? color,
   }) {
     return SizedBox(
-      width: 120,
+      width: 140,
       child: ElevatedButton.icon(
         onPressed: onPressed,
-        icon: icon != null ? Icon(icon, size: 16) : const SizedBox(width: 0),
-        label: Text(label, overflow: TextOverflow.ellipsis),
+        icon: icon != null
+            ? Icon(icon, size: 16, color: color != null ? Colors.white : null)
+            : const SizedBox(width: 0),
+        label: Text(
+          label,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(color: color != null ? Colors.white : Colors.black),
+        ),
         style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.white,
-          foregroundColor: Colors.black,
+          backgroundColor: color ?? Colors.white,
+          foregroundColor: color != null ? Colors.white : Colors.black,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(30),
           ),
@@ -929,11 +860,7 @@ class _VideoSwitcherScreenState extends State<VideoSwitcherScreen> {
 
   Widget buildTvItem(String name, int index) {
     return InkWell(
-      onTap: () {
-        setState(() {
-          _selectedStreamIndex = index;
-        });
-      },
+      onTap: () => setState(() => _selectedStreamIndex = index),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

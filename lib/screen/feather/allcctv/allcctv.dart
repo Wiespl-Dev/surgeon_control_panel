@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:surgeon_control_panel/provider/environment_state.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 class DraggableGridScreen extends StatefulWidget {
@@ -13,18 +15,14 @@ class _DraggableGridScreenState extends State<DraggableGridScreen> {
 
   // Sidebar control variables
   bool _showSidebar = true;
-  double _sidebarWidth = 200.0;
-
-  // Temperature and humidity values
-  double _temperature = 25.0;
-  double _humidity = 60.0;
+  double _sidebarWidth = 250.0;
 
   // Surgery-related YouTube videos
   final List<String> youtubeUrls = [
-    "http://192.168.0.160:9081", // Orthopedic surgery example
-    "http://192.168.0.160:9082", // Knee replacement surgery
-    "http://192.168.0.160:9083", // Hip replacement surgery
-    "http://192.168.0.160:9084", // Shoulder surgery
+    "http://192.168.0.146:9081",
+    "http://192.168.0.146:9082",
+    "http://192.168.0.146:9083",
+    "http://192.168.0.146:9083",
   ];
 
   // Web controllers
@@ -36,6 +34,16 @@ class _DraggableGridScreenState extends State<DraggableGridScreen> {
   @override
   void initState() {
     super.initState();
+
+    // Initialize environment state
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final environmentState = Provider.of<EnvironmentState>(
+        context,
+        listen: false,
+      );
+      environmentState.initSharedPreferences();
+      environmentState.initUsb();
+    });
 
     // Web controllers with surgery YouTube videos
     _obsController = WebViewController()
@@ -84,8 +92,30 @@ class _DraggableGridScreenState extends State<DraggableGridScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text("Surgery Video Grid"),
-        backgroundColor: Color(0xFFFEAC5E),
+        title: Consumer<EnvironmentState>(
+          builder: (context, environmentState, child) {
+            return Row(
+              children: [
+                Text("Surgery Video Grid"),
+                SizedBox(width: 10),
+                Container(
+                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: environmentState.isConnected
+                        ? Colors.green
+                        : Colors.red,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    environmentState.isConnected ? "Connected" : "Disconnected",
+                    style: TextStyle(fontSize: 12, color: Colors.white),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+        backgroundColor: Color.fromARGB(255, 40, 123, 131),
         elevation: 0,
         actions: [
           IconButton(
@@ -101,7 +131,11 @@ class _DraggableGridScreenState extends State<DraggableGridScreen> {
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
-            colors: [Color(0xFFFEAC5E), Color(0xFFC779D0)],
+            colors: [
+              // Color(0xFFFEAC5E), Color(0xFFC779D0)
+              Color.fromARGB(255, 40, 123, 131),
+              Color.fromARGB(255, 39, 83, 87),
+            ],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
@@ -123,41 +157,64 @@ class _DraggableGridScreenState extends State<DraggableGridScreen> {
                 width: isSmallScreen ? screenSize.width * 0.7 : _sidebarWidth,
                 margin: EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: Colors.transparent,
+                  color: Colors.black.withOpacity(0.7),
                   borderRadius: BorderRadius.circular(12),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.2),
+                      color: Colors.black.withOpacity(0.3),
                       blurRadius: 8,
                       offset: Offset(0, 4),
                     ),
                   ],
                 ),
-                child: SingleChildScrollView(
-                  child: Padding(
-                    padding: const EdgeInsets.all(12.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Center(
-                          child: Text(
-                            "Environment Controls",
-                            style: TextStyle(
-                              fontSize: isSmallScreen ? 16 : 18,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white70,
+                child: Consumer<EnvironmentState>(
+                  builder: (context, environmentState, child) {
+                    return SingleChildScrollView(
+                      child: Padding(
+                        padding: const EdgeInsets.all(12.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Center(
+                              child: Text(
+                                "Environment Controls",
+                                style: TextStyle(
+                                  fontSize: isSmallScreen ? 16 : 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
                             ),
-                          ),
+                            Divider(color: Colors.white54),
+                            _buildCurrentReadings(
+                              environmentState,
+                              isSmallScreen,
+                            ),
+                            Divider(color: Colors.white54),
+                            _buildTemperatureControl(
+                              environmentState,
+                              context,
+                              isSmallScreen,
+                            ),
+                            Divider(color: Colors.white54),
+                            _buildHumidityControl(
+                              environmentState,
+                              context,
+                              isSmallScreen,
+                            ),
+                            Divider(color: Colors.white54),
+                            _buildPresetModes(environmentState, isSmallScreen),
+                            Divider(color: Colors.white54),
+                            _buildUsbControls(
+                              environmentState,
+                              context,
+                              isSmallScreen,
+                            ),
+                          ],
                         ),
-                        Divider(),
-                        _buildTemperatureControl(context, isSmallScreen),
-                        Divider(),
-                        _buildHumidityControl(context, isSmallScreen),
-                        Divider(),
-                        _buildPresetModes(isSmallScreen),
-                      ],
-                    ),
-                  ),
+                      ),
+                    );
+                  },
                 ),
               ),
           ],
@@ -166,63 +223,186 @@ class _DraggableGridScreenState extends State<DraggableGridScreen> {
     );
   }
 
-  Widget _buildTemperatureControl(BuildContext context, bool isSmall) {
+  Widget _buildCurrentReadings(
+    EnvironmentState environmentState,
+    bool isSmall,
+  ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          "Temperature: ${_temperature.toStringAsFixed(1)}°C",
+          "Current Readings",
           style: TextStyle(
             fontWeight: FontWeight.bold,
             fontSize: isSmall ? 14 : 16,
-            color: Colors.white70,
+            color: Colors.white,
+          ),
+        ),
+        SizedBox(height: 8),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "Temperature:",
+                  style: TextStyle(color: Colors.white70, fontSize: 12),
+                ),
+                Text(
+                  "${environmentState.currentTemperature}°C",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: isSmall ? 14 : 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "Humidity:",
+                  style: TextStyle(color: Colors.white70, fontSize: 12),
+                ),
+                Text(
+                  "${environmentState.currentHumidity}%",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: isSmall ? 14 : 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTemperatureControl(
+    EnvironmentState environmentState,
+    BuildContext context,
+    bool isSmall,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          "Set Temperature: ${environmentState.pendingTemperature.toStringAsFixed(1)}°C",
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: isSmall ? 14 : 16,
+            color: Colors.white,
           ),
         ),
         Slider(
-          value: _temperature,
+          value: environmentState.pendingTemperature,
           min: 15.0,
           max: 35.0,
           divisions: 40,
-          label: _temperature.toStringAsFixed(1),
+          label: environmentState.pendingTemperature.toStringAsFixed(1),
           onChanged: (value) {
-            setState(() {
-              _temperature = value;
-            });
+            environmentState.updatePendingTemperature(value);
           },
+        ),
+        SizedBox(height: 8),
+        ElevatedButton.icon(
+          onPressed: () {
+            try {
+              environmentState.sendEnvironmentSettings();
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    "Temperature set to ${environmentState.pendingTemperature.toStringAsFixed(1)}°C",
+                  ),
+                  backgroundColor: Colors.green,
+                ),
+              );
+            } catch (e) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text("USB not connected"),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
+          },
+          icon: Icon(Icons.thermostat, size: 16),
+          label: Text("SET TEMP"),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.orange,
+            foregroundColor: Colors.white,
+            minimumSize: Size(double.infinity, 36),
+          ),
         ),
       ],
     );
   }
 
-  Widget _buildHumidityControl(BuildContext context, bool isSmall) {
+  Widget _buildHumidityControl(
+    EnvironmentState environmentState,
+    BuildContext context,
+    bool isSmall,
+  ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          "Humidity: ${_humidity.toStringAsFixed(1)}%",
+          "Set Humidity: ${environmentState.pendingHumidity.toStringAsFixed(1)}%",
           style: TextStyle(
             fontWeight: FontWeight.bold,
             fontSize: isSmall ? 14 : 16,
-            color: Colors.white70,
+            color: Colors.white,
           ),
         ),
         Slider(
-          value: _humidity,
+          value: environmentState.pendingHumidity,
           min: 0.0,
           max: 100.0,
           divisions: 100,
-          label: _humidity.toStringAsFixed(1),
+          label: environmentState.pendingHumidity.toStringAsFixed(1),
           onChanged: (value) {
-            setState(() {
-              _humidity = value;
-            });
+            environmentState.updatePendingHumidity(value);
           },
+        ),
+        SizedBox(height: 8),
+        ElevatedButton.icon(
+          onPressed: () {
+            try {
+              environmentState.sendEnvironmentSettings();
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    "Humidity set to ${environmentState.pendingHumidity.toStringAsFixed(1)}%",
+                  ),
+                  backgroundColor: Colors.green,
+                ),
+              );
+            } catch (e) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text("USB not connected"),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
+          },
+          icon: Icon(Icons.water_drop, size: 16),
+          label: Text("SET HUMIDITY"),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.blue,
+            foregroundColor: Colors.white,
+            minimumSize: Size(double.infinity, 36),
+          ),
         ),
       ],
     );
   }
 
-  Widget _buildPresetModes(bool isSmall) {
+  Widget _buildPresetModes(EnvironmentState environmentState, bool isSmall) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -231,7 +411,7 @@ class _DraggableGridScreenState extends State<DraggableGridScreen> {
           style: TextStyle(
             fontWeight: FontWeight.bold,
             fontSize: isSmall ? 14 : 16,
-            color: Colors.white70,
+            color: Colors.white,
           ),
         ),
         SizedBox(height: 8),
@@ -241,30 +421,21 @@ class _DraggableGridScreenState extends State<DraggableGridScreen> {
           children: [
             ActionChip(
               label: Text("Comfort"),
-              onPressed: () {
-                setState(() {
-                  _temperature = 22.0;
-                  _humidity = 50.0;
-                });
-              },
+              backgroundColor: Colors.green,
+              labelStyle: TextStyle(color: Colors.white),
+              onPressed: () => environmentState.setComfortMode(),
             ),
             ActionChip(
               label: Text("Energy Save"),
-              onPressed: () {
-                setState(() {
-                  _temperature = 20.0;
-                  _humidity = 45.0;
-                });
-              },
+              backgroundColor: Colors.orange,
+              labelStyle: TextStyle(color: Colors.white),
+              onPressed: () => environmentState.setEnergySaveMode(),
             ),
             ActionChip(
               label: Text("Away"),
-              onPressed: () {
-                setState(() {
-                  _temperature = 18.0;
-                  _humidity = 40.0;
-                });
-              },
+              backgroundColor: Colors.blue,
+              labelStyle: TextStyle(color: Colors.white),
+              onPressed: () => environmentState.setAwayMode(),
             ),
           ],
         ),
@@ -272,6 +443,67 @@ class _DraggableGridScreenState extends State<DraggableGridScreen> {
     );
   }
 
+  Widget _buildUsbControls(
+    EnvironmentState environmentState,
+    BuildContext context,
+    bool isSmall,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          "USB Controls",
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: isSmall ? 14 : 16,
+            color: Colors.white,
+          ),
+        ),
+        SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: environmentState.reconnectUsb,
+                icon: Icon(Icons.usb, size: 16),
+                label: Text("RECONNECT"),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.purple,
+                  foregroundColor: Colors.white,
+                  minimumSize: Size(0, 36),
+                ),
+              ),
+            ),
+            SizedBox(width: 8),
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: environmentState.requestStatus,
+                icon: Icon(Icons.refresh, size: 16),
+                label: Text("STATUS"),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.teal,
+                  foregroundColor: Colors.white,
+                  minimumSize: Size(0, 36),
+                ),
+              ),
+            ),
+          ],
+        ),
+        if (environmentState.usbStatus.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 8.0),
+            child: Text(
+              environmentState.usbStatus,
+              style: TextStyle(color: Colors.white70, fontSize: 10),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+      ],
+    );
+  }
+
+  // Rest of your existing methods (_buildDraggableBox, _buildBoxContent) remain the same
   Widget _buildDraggableBox(int index) {
     final box = boxes[index];
 

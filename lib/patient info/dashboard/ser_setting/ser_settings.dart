@@ -52,7 +52,7 @@ class _SurgerySettingsPageState extends State<SurgerySettingsPage> {
           style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
         ),
         centerTitle: true,
-        backgroundColor: _primaryColor,
+        backgroundColor: Color.fromARGB(255, 40, 123, 131),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.white),
           onPressed: () => Navigator.pop(context),
@@ -70,8 +70,8 @@ class _SurgerySettingsPageState extends State<SurgerySettingsPage> {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              const Color.fromARGB(255, 112, 143, 214),
-              const Color.fromARGB(255, 157, 102, 228),
+              Color.fromARGB(255, 40, 123, 131),
+              Color.fromARGB(255, 39, 83, 87),
             ],
           ),
         ),

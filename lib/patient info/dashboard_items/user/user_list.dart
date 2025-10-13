@@ -46,13 +46,13 @@ class _HospitalPortalPageState extends State<HospitalPortalPage> {
     }
 
     return Scaffold(
-      backgroundColor: Colors.grey[100],
+      backgroundColor: Color.fromARGB(255, 40, 123, 131),
       body: Row(
         children: [
           // Sidebar Navigation
           Container(
             width: 200,
-            color: Colors.blue[700],
+            color: Color.fromARGB(255, 40, 123, 131),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.start,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -91,11 +91,13 @@ class _HospitalPortalPageState extends State<HospitalPortalPage> {
                         style: TextStyle(
                           fontSize: 22,
                           fontWeight: FontWeight.bold,
+                          color: Colors.white,
                         ),
                       ),
                       SizedBox(
                         width: 300,
                         child: TextField(
+                          cursorColor: Colors.white,
                           controller: _searchController,
                           decoration: InputDecoration(
                             hintText: "Search...",
@@ -118,7 +120,7 @@ class _HospitalPortalPageState extends State<HospitalPortalPage> {
                   Container(
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: Color.fromARGB(255, 39, 83, 87),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Row(
@@ -134,6 +136,7 @@ class _HospitalPortalPageState extends State<HospitalPortalPage> {
                             style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.w600,
+                              color: Colors.white,
                             ),
                           ),
                         ),
@@ -160,7 +163,10 @@ class _HospitalPortalPageState extends State<HospitalPortalPage> {
                           _appointmentItem(_appointments[0], 0),
                           _appointmentItem(_appointments[1], 1),
                           ListTile(
-                            title: const Text("Schedule New Appointment"),
+                            title: const Text(
+                              "Schedule New Appointment",
+                              style: TextStyle(color: Colors.white),
+                            ),
                             leading: const Icon(Icons.add, color: Colors.green),
                             onTap: () {
                               _scheduleAppointment(context);
@@ -172,7 +178,10 @@ class _HospitalPortalPageState extends State<HospitalPortalPage> {
                           _recordItem(_medicalRecords[0], 0),
                           _recordItem(_medicalRecords[1], 1),
                           ListTile(
-                            title: const Text("Request Records"),
+                            title: const Text(
+                              "Request Records",
+                              style: TextStyle(color: Colors.white),
+                            ),
                             leading: const Icon(
                               Icons.request_page,
                               color: Colors.blue,
@@ -185,9 +194,13 @@ class _HospitalPortalPageState extends State<HospitalPortalPage> {
 
                         _buildInfoCard("Health Information", [
                           ListTile(
-                            title: const Text("Vaccinations"),
+                            title: const Text(
+                              "Vaccinations",
+                              style: TextStyle(color: Colors.white),
+                            ),
                             subtitle: const Text(
                               "Keep your vaccinations up to date",
+                              style: TextStyle(color: Colors.white),
                             ),
                             leading: const Icon(
                               Icons.vaccines,
@@ -198,7 +211,10 @@ class _HospitalPortalPageState extends State<HospitalPortalPage> {
                             },
                           ),
                           ListTile(
-                            title: const Text("Allergies"),
+                            title: const Text(
+                              "Allergies",
+                              style: TextStyle(color: Colors.white),
+                            ),
                             leading: const Icon(
                               Icons.warning,
                               color: Colors.orange,
@@ -211,7 +227,10 @@ class _HospitalPortalPageState extends State<HospitalPortalPage> {
 
                         _buildInfoCard("Medications", [
                           ListTile(
-                            title: const Text("Current Medications"),
+                            title: const Text(
+                              "Current Medications",
+                              style: TextStyle(color: Colors.white),
+                            ),
                             leading: const Icon(
                               Icons.medication,
                               color: Colors.red,
@@ -221,7 +240,10 @@ class _HospitalPortalPageState extends State<HospitalPortalPage> {
                             },
                           ),
                           ListTile(
-                            title: const Text("Prescription Refill"),
+                            title: const Text(
+                              "Prescription Refill",
+                              style: TextStyle(color: Colors.white),
+                            ),
                             leading: const Icon(
                               Icons.refresh,
                               color: Colors.blue,
@@ -262,7 +284,7 @@ class _HospitalPortalPageState extends State<HospitalPortalPage> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Color.fromARGB(255, 39, 83, 87),
         borderRadius: BorderRadius.circular(12),
         boxShadow: const [
           BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 2)),
@@ -273,7 +295,11 @@ class _HospitalPortalPageState extends State<HospitalPortalPage> {
         children: [
           Text(
             title,
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
           ),
           const SizedBox(height: 10),
           Expanded(child: ListView(children: children)),
@@ -285,13 +311,16 @@ class _HospitalPortalPageState extends State<HospitalPortalPage> {
   Widget _appointmentItem(Map<String, String> appointment, int index) {
     return ListTile(
       leading: const Icon(Icons.event, color: Colors.blue),
-      title: Text(appointment['date']!),
-      subtitle: Text('${appointment['time']!} - ${appointment['doctor']!}'),
+      title: Text(appointment['date']!, style: TextStyle(color: Colors.white)),
+      subtitle: Text(
+        '${appointment['time']!} - ${appointment['doctor']!}',
+        style: TextStyle(color: Colors.white),
+      ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           IconButton(
-            icon: const Icon(Icons.edit, size: 18),
+            icon: const Icon(Icons.edit, size: 18, color: Colors.white),
             onPressed: () => _editAppointment(context, index),
           ),
           IconButton(
@@ -306,8 +335,11 @@ class _HospitalPortalPageState extends State<HospitalPortalPage> {
   Widget _recordItem(Map<String, String> record, int index) {
     return ListTile(
       leading: const Icon(Icons.folder, color: Colors.blue),
-      title: Text(record['date']!),
-      subtitle: Text('${record['type']!} - ${record['status']!}'),
+      title: Text(record['date']!, style: TextStyle(color: Colors.white)),
+      subtitle: Text(
+        '${record['type']!} - ${record['status']!}',
+        style: TextStyle(color: Colors.white),
+      ),
       trailing: ElevatedButton(
         onPressed: () => _viewMedicalRecord(context, index),
         child: const Text("View"),
@@ -566,9 +598,13 @@ class _HospitalPortalPageState extends State<HospitalPortalPage> {
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: const Text("Vaccination Records"),
+          title: const Text(
+            "Vaccination Records",
+            style: TextStyle(color: Colors.white),
+          ),
           content: const Text(
             "Your vaccination history would be displayed here.",
+            style: TextStyle(color: Colors.white),
           ),
           actions: [
             TextButton(

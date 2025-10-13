@@ -254,7 +254,7 @@ class ORStatusProvider with ChangeNotifier {
       if (i <= 7) {
         pairs.add('F_Sensor_${i}_FAULT_BIT:0');
         pairs.add('S_Sensor_${i}_NO_NC_SETTING:1');
-        pairs.add('S_Light_${i}_ON_OFF:0');
+        pairs.add('S_Light_${i}_ON_OFF:1');
         pairs.add('S_Light_${i}_Intensity:000');
       } else {
         bool state = false;
