@@ -9,10 +9,13 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:surgeon_control_panel/patient%20info/dashboard/store/storeitems.dart';
 import 'package:surgeon_control_panel/provider/audioProvider.dart';
+import 'package:surgeon_control_panel/provider/environment_state.dart';
 import 'package:surgeon_control_panel/provider/home_provider.dart';
+import 'package:surgeon_control_panel/provider/humidity_state.dart';
 import 'package:surgeon_control_panel/provider/light_provider.dart';
 import 'package:surgeon_control_panel/provider/or_status_provider.dart';
 import 'package:surgeon_control_panel/provider/room_cleanliness_provider.dart';
+import 'package:surgeon_control_panel/provider/temperature_state.dart';
 import 'package:surgeon_control_panel/screen/cssd.dart';
 import 'package:surgeon_control_panel/screen/entrance.dart';
 import 'package:surgeon_control_panel/screen/home.dart';
@@ -82,6 +85,9 @@ Future<void> main() async {
         ChangeNotifierProvider(create: (context) => LightProvider()),
         ChangeNotifierProvider(create: (context) => ORStatusProvider()),
         ChangeNotifierProvider(create: (context) => RoomCleanlinessProvider()),
+        ChangeNotifierProvider(create: (context) => HumidityState()),
+        ChangeNotifierProvider(create: (context) => TemperatureState()),
+        ChangeNotifierProvider(create: (context) => EnvironmentState()),
       ],
       child: const MyApp(),
     ),

@@ -45,11 +45,11 @@ class StylishStopwatchPage extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: Color.fromARGB(255, 112, 143, 214),
+        backgroundColor: Color.fromARGB(255, 40, 123, 131),
         elevation: 0,
         title: const Text(
           "Stopwatch",
-          style: TextStyle(fontWeight: FontWeight.bold),
+          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
         ),
         centerTitle: true,
       ),
@@ -60,8 +60,8 @@ class StylishStopwatchPage extends StatelessWidget {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              Color.fromARGB(255, 112, 143, 214),
-              Color.fromARGB(255, 157, 102, 228),
+              Color.fromARGB(255, 40, 123, 131),
+              Color.fromARGB(255, 39, 83, 87),
             ],
           ),
         ),

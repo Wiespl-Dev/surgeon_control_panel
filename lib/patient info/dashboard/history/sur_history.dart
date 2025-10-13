@@ -47,8 +47,8 @@ class _SurgeryHistoryPageState extends State<SurgeryHistoryPage> {
           decoration: const BoxDecoration(
             gradient: LinearGradient(
               colors: [
-                Color.fromARGB(255, 112, 143, 214),
-                Color.fromARGB(255, 157, 102, 228),
+                Color.fromARGB(255, 40, 123, 131),
+                Color.fromARGB(255, 39, 83, 87),
               ],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
@@ -64,8 +64,8 @@ class _SurgeryHistoryPageState extends State<SurgeryHistoryPage> {
         decoration: const BoxDecoration(
           gradient: LinearGradient(
             colors: [
-              Color.fromARGB(255, 112, 143, 214),
-              Color.fromARGB(255, 157, 102, 228),
+              Color.fromARGB(255, 40, 123, 131),
+              Color.fromARGB(255, 39, 83, 87),
             ],
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,

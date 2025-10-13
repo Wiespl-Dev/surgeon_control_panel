@@ -45,7 +45,7 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
     'rh',
     'lighting',
     'dicom',
-    'timer',
+    'Stop Watch',
     'music',
     'cctv',
     'mgps',
@@ -478,7 +478,7 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
         );
         break;
       case 12:
-        Get.to(() => PatientDashboard(), transition: Transition.rightToLeft);
+        Get.to(() => RelayControlApp(), transition: Transition.rightToLeft);
         break;
     }
   }
@@ -746,10 +746,11 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
             child: Column(
               children: [
                 Padding(
-                  padding: const EdgeInsets.all(10.0),
+                  padding: const EdgeInsets.only(top: 50),
                   child: Column(
                     children: [
                       Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                         children: [
                           Padding(
                             padding: const EdgeInsets.only(left: 20, bottom: 5),
@@ -784,157 +785,102 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
                               ),
                             ),
                           ),
-                          const Spacer(),
-                          DropdownButton<String>(
-                            value: Get.locale?.languageCode ?? 'en',
-                            icon: const Icon(
-                              Icons.language,
+                          const SizedBox(),
+                          // Text(
+                          //   "Pulse Clinc and Hospital",
+                          //   style: TextStyle(color: Colors.white),
+                          // ),
+                          // const Spacer(),
+                          // const Spacer(),
+                          Text(
+                            "welcome Healing Hands Clinic",
+                            style: TextStyle(
                               color: Colors.white,
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
                             ),
-                            dropdownColor: Colors.blue[800],
-                            style: const TextStyle(color: Colors.white),
-                            underline: Container(),
-                            items: const [
-                              DropdownMenuItem(
-                                value: 'en',
-                                child: Text(
-                                  'English',
-                                  style: TextStyle(color: Colors.white),
+                          ),
+
+                          // const SizedBox(width: 20),
+                          const SizedBox(),
+                          // const Spacer(),
+                          Row(
+                            children: [
+                              DropdownButton<String>(
+                                value: Get.locale?.languageCode ?? 'en',
+                                icon: const Icon(
+                                  Icons.language,
+                                  color: Colors.white,
+                                ),
+                                dropdownColor: Colors.blue[800],
+                                style: const TextStyle(color: Colors.white),
+                                underline: Container(),
+                                items: const [
+                                  DropdownMenuItem(
+                                    value: 'en',
+                                    child: Text(
+                                      'English',
+                                      style: TextStyle(color: Colors.white),
+                                    ),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'hi',
+                                    child: Text(
+                                      'हिंदी',
+                                      style: TextStyle(color: Colors.white),
+                                    ),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'ar',
+                                    child: Text(
+                                      'العربية',
+                                      style: TextStyle(color: Colors.white),
+                                    ),
+                                  ),
+                                ],
+                                onChanged: (String? value) {
+                                  if (value != null) {
+                                    Get.updateLocale(Locale(value));
+                                  }
+                                },
+                              ),
+                              // Status indicators
+                              const SizedBox(width: 12),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: homeProvider.isConnected
+                                      ? Colors.transparent
+                                      : Colors.red,
+                                  borderRadius: BorderRadius.circular(12),
                                 ),
                               ),
-                              DropdownMenuItem(
-                                value: 'hi',
-                                child: Text(
-                                  'हिंदी',
-                                  style: TextStyle(color: Colors.white),
-                                ),
-                              ),
-                              DropdownMenuItem(
-                                value: 'ar',
-                                child: Text(
-                                  'العربية',
-                                  style: TextStyle(color: Colors.white),
+                              const SizedBox(width: 12),
+
+                              IconButton(
+                                onPressed: () async {
+                                  final prefs =
+                                      await SharedPreferences.getInstance();
+                                  await prefs.remove("uniqueCode");
+                                  await prefs.remove("mode");
+                                  Navigator.pushAndRemoveUntil(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => const LoginPage(),
+                                    ),
+                                    (route) => false,
+                                  );
+                                },
+                                icon: const Icon(
+                                  Icons.logout_rounded,
+                                  color: Colors.white60,
+                                  size: 30,
                                 ),
                               ),
                             ],
-                            onChanged: (String? value) {
-                              if (value != null) {
-                                Get.updateLocale(Locale(value));
-                              }
-                            },
-                          ),
-                          const SizedBox(width: 20),
-                          const Spacer(),
-                          // Status indicators
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 8,
-                            ),
-                            decoration: BoxDecoration(
-                              color: homeProvider.isHepaHealthy
-                                  ? Colors.green.withOpacity(0.2)
-                                  : Colors.red.withOpacity(0.2),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                color: homeProvider.isHepaHealthy
-                                    ? Colors.green
-                                    : Colors.red,
-                                width: 2,
-                              ),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  homeProvider.isHepaHealthy
-                                      ? Icons.air
-                                      : Icons.warning,
-                                  color: homeProvider.isHepaHealthy
-                                      ? Colors.green
-                                      : Colors.red,
-                                  size: 20,
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  homeProvider.hepaStatusText,
-                                  style: TextStyle(
-                                    color: homeProvider.isHepaHealthy
-                                        ? Colors.green
-                                        : Colors.red,
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              color: homeProvider.isConnected
-                                  ? Colors.green
-                                  : Colors.red,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Text(
-                              homeProvider.isConnected
-                                  ? "USB Connected"
-                                  : "USB Disconnected",
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          IconButton(
-                            icon: const Icon(
-                              Icons.bug_report,
-                              size: 30,
-                              color: Colors.white,
-                            ),
-                            onPressed: () {
-                              homeProvider.notifyListeners();
-                            },
-                          ),
-                          IconButton(
-                            icon: const Icon(
-                              Icons.restart_alt,
-                              size: 30,
-                              color: Colors.yellow,
-                            ),
-                            onPressed: () {
-                              homeProvider.resetAllSensorsToNoFault();
-                              _showSuccessSnackbar(
-                                "All sensors reset to no fault",
-                              );
-                            },
-                          ),
-                          IconButton(
-                            onPressed: () async {
-                              final prefs =
-                                  await SharedPreferences.getInstance();
-                              await prefs.remove("uniqueCode");
-                              await prefs.remove("mode");
-                              Navigator.pushAndRemoveUntil(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => const LoginPage(),
-                                ),
-                                (route) => false,
-                              );
-                            },
-                            icon: const Icon(
-                              Icons.logout_rounded,
-                              color: Colors.white60,
-                              size: 30,
-                            ),
                           ),
                         ],
                       ),
@@ -1060,6 +1006,49 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
                         ],
                       ),
                       const Spacer(),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: homeProvider.isHepaHealthy
+                              ? Colors.green.withOpacity(0.2)
+                              : Colors.red.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: homeProvider.isHepaHealthy
+                                ? Colors.green
+                                : Colors.red,
+                            width: 2,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              homeProvider.isHepaHealthy
+                                  ? Icons.air
+                                  : Icons.warning,
+                              color: homeProvider.isHepaHealthy
+                                  ? Colors.green
+                                  : Colors.red,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              homeProvider.hepaStatusText,
+                              style: TextStyle(
+                                color: homeProvider.isHepaHealthy
+                                    ? Colors.green
+                                    : Colors.red,
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
@@ -1357,12 +1346,12 @@ class ClinicalBackgroundPainter extends CustomPainter {
     }
 
     // === 6) ECG waveform ===
-    _drawECG(canvas, size, t);
+    _drawECG(canvas, size);
   }
 
-  void _drawECG(Canvas canvas, Size size, double phase) {
+  void _drawECG(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = Colors.white.withOpacity(0.15)
+      ..color = Colors.transparent
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.4
       ..strokeCap = StrokeCap.round;
@@ -1370,8 +1359,10 @@ class ClinicalBackgroundPainter extends CustomPainter {
     final path = Path();
     final amplitude = size.height * 0.03;
     final baselineY = size.height * 0.22;
-    final speed = 0.6;
-    final offsetX = phase * size.width * speed;
+
+    // Static offset (no animation)
+    final offsetX =
+        0.0; // Set a static value instead of using phase for animation
 
     bool first = true;
     for (double x = -size.width; x <= size.width * 2; x += 4) {
@@ -1381,7 +1372,7 @@ class ClinicalBackgroundPainter extends CustomPainter {
       final yOffset = beat * amplitude * 0.6 + (spike * amplitude * 0.12);
 
       final px = x - offsetX % (size.width * 1.2);
-      final py = baselineY + yOffset + 4 * sin((phase * 2 * pi) + x * 0.01);
+      final py = baselineY + yOffset;
 
       if (first) {
         path.moveTo(px, py);

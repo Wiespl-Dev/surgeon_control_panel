@@ -28,7 +28,7 @@ class RelayControlScreen extends StatefulWidget {
 
 class _RelayControlScreenState extends State<RelayControlScreen> {
   final TextEditingController _ipController = TextEditingController();
-  String _statusMessage = 'Enter ESP32 IP and connect';
+  String _statusMessage = 'Enter and connect';
   String _currentIp = '';
   bool _isConnected = false;
   String _currentMode = 'UP'; // Track current mode: UP or OFF
