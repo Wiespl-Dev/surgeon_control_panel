@@ -19,6 +19,7 @@ import 'package:surgeon_control_panel/provider/temperature_state.dart';
 import 'package:surgeon_control_panel/screen/cssd.dart';
 import 'package:surgeon_control_panel/screen/entrance.dart';
 import 'package:surgeon_control_panel/screen/home.dart';
+import 'package:surgeon_control_panel/services/usb_service.dart';
 import 'package:video_player/video_player.dart';
 import 'provider/stopwatch_provider.dart';
 
@@ -67,6 +68,7 @@ class LocalizationService extends Translations {
 /// ==========================
 /// MAIN
 /// ==========================
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await SystemChrome.setPreferredOrientations([
@@ -76,18 +78,21 @@ Future<void> main() async {
 
   await LocalizationService.instance.init();
 
+  // Create GlobalUsbProvider instance early and initialize it
+  final globalUsbProvider = GlobalUsbProvider();
+
+  // Use a simple approach for boot detection - extended delays
+  await globalUsbProvider.initSharedPreferences();
+
   runApp(
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => StopwatchProvider()),
         ChangeNotifierProvider(create: (_) => AudioProvider()),
-        ChangeNotifierProvider(create: (context) => HomeProvider()),
-        ChangeNotifierProvider(create: (context) => LightProvider()),
         ChangeNotifierProvider(create: (context) => ORStatusProvider()),
         ChangeNotifierProvider(create: (context) => RoomCleanlinessProvider()),
-        ChangeNotifierProvider(create: (context) => HumidityState()),
-        ChangeNotifierProvider(create: (context) => TemperatureState()),
         ChangeNotifierProvider(create: (context) => EnvironmentState()),
+        ChangeNotifierProvider(create: (context) => globalUsbProvider),
       ],
       child: const MyApp(),
     ),

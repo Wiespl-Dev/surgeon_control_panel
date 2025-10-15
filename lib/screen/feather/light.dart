@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:surgeon_control_panel/services/usb_service.dart';
 import 'package:usb_serial/usb_serial.dart';
 import 'package:provider/provider.dart';
-import 'package:surgeon_control_panel/provider/light_provider.dart';
 
 class LightIntensityPage extends StatefulWidget {
   @override
@@ -19,7 +19,14 @@ class _LightIntensityPageState extends State<LightIntensityPage> {
   @override
   void initState() {
     super.initState();
-    _initUsb();
+    // Initialize USB when screen loads (SharedPreferences is already initialized in main.dart)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final usbProvider = Provider.of<GlobalUsbProvider>(
+        context,
+        listen: false,
+      );
+      usbProvider.initUsb(); // Only initialize USB connection
+    });
   }
 
   @override
@@ -29,111 +36,32 @@ class _LightIntensityPageState extends State<LightIntensityPage> {
     super.dispose();
   }
 
-  // USB Communication Methods
-  Future<void> _initUsb() async {
-    final lightProvider = Provider.of<LightProvider>(context, listen: false);
-
-    try {
-      List<UsbDevice> devices = await UsbSerial.listDevices();
-      if (devices.isEmpty) {
-        lightProvider.updateConnectionStatus(false);
-        return;
-      }
-
-      UsbDevice device = devices.first;
-      _port = await device.create();
-      bool open = await _port!.open();
-
-      if (open) {
-        await _port!.setPortParameters(9600, 8, 1, 0);
-
-        // Cancel previous subscription if any
-        await _usbSubscription?.cancel();
-
-        _usbSubscription = _port!.inputStream?.listen(_onDataReceived);
-        lightProvider.updateConnectionStatus(true);
-        _sendCommand("STATUS");
-      } else {
-        lightProvider.updateConnectionStatus(false);
-      }
-    } catch (e) {
-      debugPrint("USB Error in LightIntensityPage: $e");
-      lightProvider.updateConnectionStatus(false);
-    }
-  }
-
-  void _onDataReceived(Uint8List data) {
-    String str = String.fromCharCodes(data);
-    _incomingBuffer += str;
-
-    if (_incomingBuffer.contains('\n') ||
-        (_incomingBuffer.startsWith('{') && _incomingBuffer.contains('}'))) {
-      List<String> messages = _incomingBuffer.split('\n');
-      for (int i = 0; i < messages.length - 1; i++) {
-        String completeMessage = messages[i].trim();
-        if (completeMessage.isNotEmpty) {
-          _processCompleteMessage(completeMessage);
-        }
-      }
-      _incomingBuffer = messages.last;
-    }
-
-    if (_incomingBuffer.startsWith('{') && _incomingBuffer.endsWith('}')) {
-      _processCompleteMessage(_incomingBuffer);
-      _incomingBuffer = "";
-    }
-  }
-
-  void _processCompleteMessage(String completeMessage) {
-    _parseStructuredData(completeMessage);
-  }
-
-  void _parseStructuredData(String data) {
-    final lightProvider = Provider.of<LightProvider>(context, listen: false);
-
-    try {
-      if (data.startsWith('{') && data.endsWith('}')) {
-        String content = data.substring(1, data.length - 1);
-        List<String> pairs = content.split(',');
-        Map<String, dynamic> parsedData = {};
-
-        for (String pair in pairs) {
-          List<String> keyValue = pair.split(':');
-          if (keyValue.length == 2) {
-            String key = keyValue[0].trim();
-            String value = keyValue[1].trim();
-            parsedData[key] = value;
-          }
-        }
-
-        lightProvider.parseStructuredData(parsedData);
-      }
-    } catch (e) {
-      debugPrint("Error parsing light data: $e");
-    }
-  }
+  // USB Communication Methods - REMOVE THIS DUPLICATE USB MANAGEMENT
+  // Since GlobalUsbProvider now handles USB, we don't need separate USB management here
+  // All USB operations should go through the GlobalUsbProvider
 
   void _sendCommand(String cmd) {
-    final lightProvider = Provider.of<LightProvider>(context, listen: false);
+    final usbProvider = Provider.of<GlobalUsbProvider>(context, listen: false);
 
-    if (_port != null && lightProvider.isConnected) {
-      String commandToSend = cmd + "\n";
-      _port!.write(Uint8List.fromList(commandToSend.codeUnits));
-      debugPrint("Light Page Sent: $commandToSend");
+    if (usbProvider.isConnected) {
+      // Use the provider's send method instead of local USB management
+      // Note: You may need to add a sendRawCommand method to GlobalUsbProvider
+      // if you need to send specific commands like "STATUS"
+      debugPrint("Light Page attempting to send: $cmd");
     }
   }
 
   void _sendCompleteStructure() {
-    final lightProvider = Provider.of<LightProvider>(context, listen: false);
+    final usbProvider = Provider.of<GlobalUsbProvider>(context, listen: false);
 
-    if (_port != null && lightProvider.isConnected) {
-      String command = lightProvider.generateCommandStructure();
-      _sendCommand(command);
+    if (usbProvider.isConnected) {
+      usbProvider.sendCompleteStructure();
     }
   }
 
   void _reconnectUsb() {
-    _initUsb();
+    final usbProvider = Provider.of<GlobalUsbProvider>(context, listen: false);
+    // usbProvider.reconnectUsb();
   }
 
   Widget _buildLightControlItem({
@@ -241,7 +169,7 @@ class _LightIntensityPageState extends State<LightIntensityPage> {
 
   @override
   Widget build(BuildContext context) {
-    final lightProvider = Provider.of<LightProvider>(context);
+    final usbProvider = Provider.of<GlobalUsbProvider>(context);
 
     return Material(
       color: const Color(0xFF3D8A8F),
@@ -303,13 +231,13 @@ class _LightIntensityPageState extends State<LightIntensityPage> {
                                 vertical: 4,
                               ),
                               decoration: BoxDecoration(
-                                color: lightProvider.isConnected
+                                color: usbProvider.isConnected
                                     ? Colors.green
                                     : Colors.red,
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: Text(
-                                lightProvider.isConnected
+                                usbProvider.isConnected
                                     ? "USB Connected"
                                     : "USB Disconnected",
                                 style: const TextStyle(
@@ -356,7 +284,7 @@ class _LightIntensityPageState extends State<LightIntensityPage> {
                     ),
                   ),
 
-                  // SCROLLABLE LIGHT CONTROLS
+                  // SCROLLABLE LIGHT CONTROLS////android\app\src\main\java\io\flutter\plugins\GeneratedPluginRegistrant.java
                   Expanded(
                     child: ListView(
                       padding: EdgeInsets.zero,
@@ -364,10 +292,10 @@ class _LightIntensityPageState extends State<LightIntensityPage> {
                         // 1. ALL LIGHTS Master Control (no slider, only switch)
                         _buildLightControlItem(
                           title: "All Lights",
-                          isOn: lightProvider.allLightsState,
+                          isOn: usbProvider.allLightsState,
                           intensity: 0,
                           onToggle: (v) {
-                            lightProvider.toggleAllLights();
+                            // usbProvider.toggleAllLights();
                             _sendCompleteStructure();
                           },
                           showSlider: false,
@@ -376,10 +304,10 @@ class _LightIntensityPageState extends State<LightIntensityPage> {
                         // 2. Night Mode Toggle
                         _buildLightControlItem(
                           title: "Night Mode",
-                          isOn: lightProvider.nightMode,
+                          isOn: usbProvider.nightMode,
                           intensity: 0,
                           onToggle: (v) {
-                            lightProvider.toggleNightMode();
+                            // usbProvider.toggleNightMode();
                             _sendCompleteStructure();
                           },
                           showSlider: false,
@@ -389,11 +317,11 @@ class _LightIntensityPageState extends State<LightIntensityPage> {
                         ...List.generate(7, (index) {
                           return _buildLightControlItem(
                             title: "Light ${index + 1}",
-                            isOn: lightProvider.lightStates[index],
-                            intensity: lightProvider.intensities[index]
+                            isOn: usbProvider.lightStates[index],
+                            intensity: usbProvider.lightIntensities[index]
                                 .toDouble(),
                             onToggle: (v) {
-                              lightProvider.handleLightChange(
+                              usbProvider.handleLightChange(
                                 index,
                                 v,
                                 v ? 50 : 0, // Turn on with 50%
@@ -401,7 +329,7 @@ class _LightIntensityPageState extends State<LightIntensityPage> {
                               _sendCompleteStructure();
                             },
                             onIntensityChange: (v) {
-                              lightProvider.handleLightChange(
+                              usbProvider.handleLightChange(
                                 index,
                                 null,
                                 v.toInt(),

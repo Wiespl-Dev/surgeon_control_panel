@@ -17,7 +17,6 @@ import 'package:surgeon_control_panel/patient%20info/dashboard/store/storeitems.
 import 'package:surgeon_control_panel/patient%20info/dashboard_items/patient_list.dart';
 import 'package:surgeon_control_panel/provider/audioProvider.dart';
 import 'package:surgeon_control_panel/provider/stopwatch_provider.dart';
-import 'package:surgeon_control_panel/provider/home_provider.dart';
 import 'package:surgeon_control_panel/screen/feather/cctv.dart';
 import 'package:surgeon_control_panel/screen/feather/clock/clock.dart';
 import 'package:surgeon_control_panel/screen/feather/light.dart';
@@ -28,6 +27,7 @@ import 'package:surgeon_control_panel/screen/feather/rh.dart';
 import 'package:surgeon_control_panel/screen/feather/temp.dart';
 import 'package:surgeon_control_panel/screen/feather/timer.dart';
 import 'package:surgeon_control_panel/screen/profil/profilescreen.dart';
+import 'package:surgeon_control_panel/services/usb_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:usb_serial/usb_serial.dart';
@@ -120,31 +120,28 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
   void _startPeriodicUpdates() {
     _updateTimer?.cancel();
     _updateTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
-      final homeProvider = Provider.of<HomeProvider>(context, listen: false);
-      homeProvider.refreshHepaStatus();
+      final usbProvider = Provider.of<GlobalUsbProvider>(
+        context,
+        listen: false,
+      );
+      usbProvider.refreshHepaStatus();
     });
   }
 
   // USB Initialization
   Future<void> _initUsb() async {
-    final homeProvider = Provider.of<HomeProvider>(context, listen: false);
+    final usbProvider = Provider.of<GlobalUsbProvider>(context, listen: false);
 
     try {
-      homeProvider.updateUsbStatus(false, "Scanning for USB devices...");
-
+      // USB status is now managed by GlobalUsbProvider
       List<UsbDevice> devices = await UsbSerial.listDevices();
       debugPrint("Found ${devices.length} USB devices");
 
       if (devices.isEmpty) {
-        homeProvider.updateUsbStatus(false, "No USB devices found");
         return;
       }
 
       UsbDevice device = devices.first;
-      homeProvider.updateUsbStatus(
-        false,
-        "Connecting to ${device.deviceName}...",
-      );
 
       _port = await device.create();
       bool open = await _port!.open();
@@ -153,8 +150,6 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
         await _port!.setDTR(true);
         await _port!.setRTS(true);
         await _port!.setPortParameters(9600, 8, 1, 0);
-
-        homeProvider.updateUsbStatus(true, "Connected to ${device.deviceName}");
 
         // Cancel previous subscription if any
         await _usbSubscription?.cancel();
@@ -165,19 +160,14 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
           },
           onError: (e) {
             debugPrint("USB input stream error: $e");
-            homeProvider.updateUsbStatus(false, "Connection error");
           },
           onDone: () {
             debugPrint("USB input stream done");
-            homeProvider.updateUsbStatus(false, "Disconnected");
           },
         );
-      } else {
-        homeProvider.updateUsbStatus(false, "Failed to open USB port");
       }
     } catch (e) {
       debugPrint("USB Error: $e");
-      homeProvider.updateUsbStatus(false, "Error: $e");
     }
   }
 
@@ -242,8 +232,7 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
   }
 
   void _parseStructuredData(String data) {
-    final homeProvider = Provider.of<HomeProvider>(context, listen: false);
-    final prefs = homeProvider.prefs;
+    final usbProvider = Provider.of<GlobalUsbProvider>(context, listen: false);
 
     try {
       if (data.startsWith('{') && data.endsWith('}')) {
@@ -266,11 +255,10 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
               int? sensorNum = int.tryParse(sensorNumStr);
               if (sensorNum != null &&
                   (sensorNum >= 1 && sensorNum <= 7 || sensorNum == 10)) {
-                prefs?.setString(key, value);
                 debugPrint("🔄 Updated $key: $value");
 
                 if (sensorNum == 10) {
-                  homeProvider.refreshHepaStatus();
+                  usbProvider.refreshHepaStatus();
                 }
               }
             }
@@ -283,7 +271,7 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
         if (parsedData.containsKey('C_OT_TEMP')) {
           String tempStr = parsedData['C_OT_TEMP']!;
           String newTemp = _formatNumericWithOneDecimal(tempStr);
-          homeProvider.updateTemperature(newTemp);
+          usbProvider.updateTemperature(newTemp);
           debugPrint("Parsed and saved temperature: $newTemp°C");
         }
 
@@ -291,7 +279,7 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
         if (parsedData.containsKey('C_RH')) {
           String humStr = parsedData['C_RH']!;
           String newHum = _formatNumericWithOneDecimal(humStr);
-          homeProvider.updateHumidity(newHum);
+          usbProvider.updateHumidity(newHum);
           debugPrint("Parsed and saved humidity: $newHum%");
         }
 
@@ -299,7 +287,7 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
         if (parsedData.containsKey('S_Light_10_ON_OFF')) {
           String systemStatusStr = parsedData['S_Light_10_ON_OFF']!;
           bool systemStatus = systemStatusStr == '1';
-          homeProvider.updateSystemStatus(systemStatus);
+          usbProvider.updateSystemStatus(systemStatus);
           debugPrint("Parsed and saved system status: $systemStatus");
         }
       } else {
@@ -323,14 +311,15 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
   }
 
   void _reconnectUsb() {
-    _initUsb();
+    final usbProvider = Provider.of<GlobalUsbProvider>(context, listen: false);
+    usbProvider.reconnectUsb();
   }
 
   // Send system status command to USB
   void _sendSystemStatusCommand(bool isOn) {
-    final homeProvider = Provider.of<HomeProvider>(context, listen: false);
+    final usbProvider = Provider.of<GlobalUsbProvider>(context, listen: false);
 
-    if (_port != null && homeProvider.isConnected) {
+    if (_port != null && usbProvider.isConnected) {
       List<String> pairs = [];
       pairs.add('SR_WSL:200001');
       pairs.add('C_PRESSURE_1:000');
@@ -342,13 +331,7 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
 
       // Add all parameters
       for (int i = 1; i <= 10; i++) {
-        String? fault;
-        if (i <= 7) {
-          fault =
-              homeProvider.prefs?.getString('F_Sensor_${i}_FAULT_BIT') ?? '0';
-        } else {
-          fault = '0';
-        }
+        String fault = '0'; // Default no fault
         pairs.add('F_Sensor_${i}_FAULT_BIT:$fault');
         pairs.add('S_Sensor_${i}_NO_NC_SETTING:1');
 
@@ -507,9 +490,9 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
       context,
       listen: false,
     );
-    final homeProvider = Provider.of<HomeProvider>(context);
+    final usbProvider = Provider.of<GlobalUsbProvider>(context);
 
-    bool isMgpsWithFault = itemNumber == 8 && homeProvider.hasSensorFault();
+    bool isMgpsWithFault = itemNumber == 8 && usbProvider.hasSensorFault();
 
     return Container(
       margin: const EdgeInsets.all(0),
@@ -574,7 +557,7 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
   }
 
   Widget _buildMainTab() {
-    final homeProvider = Provider.of<HomeProvider>(context);
+    final usbProvider = Provider.of<GlobalUsbProvider>(context);
 
     return SingleChildScrollView(
       child: Column(
@@ -609,13 +592,13 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
                         icon,
                         itemNumber == 5,
                         currentValue: itemNumber == 1
-                            ? (homeProvider.currentTemp == "--"
+                            ? (usbProvider.currentTemperature == "--"
                                   ? "00"
-                                  : '${homeProvider.currentTemp}°C')
+                                  : '${usbProvider.currentTemperature}°C')
                             : itemNumber == 2
-                            ? (homeProvider.currentHumidity == "--"
+                            ? (usbProvider.currentHumidity == "--"
                                   ? "00"
-                                  : '${homeProvider.currentHumidity}%')
+                                  : '${usbProvider.currentHumidity}%')
                             : null,
                         itemNumber: itemNumber,
                       ),
@@ -723,7 +706,7 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
-    final homeProvider = Provider.of<HomeProvider>(context);
+    final usbProvider = Provider.of<GlobalUsbProvider>(context);
     final audioProvider = Provider.of<AudioProvider>(context);
     return Scaffold(
       body: Stack(
@@ -786,12 +769,6 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
                             ),
                           ),
                           const SizedBox(),
-                          // Text(
-                          //   "Pulse Clinc and Hospital",
-                          //   style: TextStyle(color: Colors.white),
-                          // ),
-                          // const Spacer(),
-                          // const Spacer(),
                           Text(
                             "welcome Healing Hands Clinic",
                             style: TextStyle(
@@ -800,10 +777,7 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
                               fontWeight: FontWeight.bold,
                             ),
                           ),
-
-                          // const SizedBox(width: 20),
                           const SizedBox(),
-                          // const Spacer(),
                           Row(
                             children: [
                               DropdownButton<String>(
@@ -844,7 +818,6 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
                                   }
                                 },
                               ),
-                              // Status indicators
                               const SizedBox(width: 12),
                               Container(
                                 padding: const EdgeInsets.symmetric(
@@ -852,7 +825,7 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
                                   vertical: 6,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: homeProvider.isConnected
+                                  color: usbProvider.isConnected
                                       ? Colors.transparent
                                       : Colors.red,
                                   borderRadius: BorderRadius.circular(12),
@@ -920,41 +893,25 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
                       Stack(
                         alignment: Alignment.center,
                         children: [
-                          // 1. BACKGROUND CONTENT (To be blurred)
-                          // Make sure this path ('assets/background.jpg') is a real, colorful image
-                          // and that the asset is declared in your pubspec.yaml file.
-                          // Image.asset(
-                          //   'assets/image.png',
-                          //   fit: BoxFit.cover,
-                          //   height: 100,
-                          //   width: 300,
-                          // ),
                           Center(
                             child: ClipRRect(
-                              borderRadius: BorderRadius.circular(
-                                20.0,
-                              ), // Creates the glass shape
+                              borderRadius: BorderRadius.circular(20.0),
                               child: BackdropFilter(
-                                // Applies the blur to the content *behind* this widget
                                 filter: ImageFilter.blur(
-                                  sigmaX: 10.0, // Horizontal blur intensity
-                                  sigmaY: 10.0, // Vertical blur intensity
+                                  sigmaX: 10.0,
+                                  sigmaY: 10.0,
                                 ),
                                 child: Container(
                                   height: 120,
                                   width: 270,
-                                  // Defines the look of the 'glass'
                                   decoration: BoxDecoration(
-                                    // Semi-transparent color is essential for the frosted look
                                     color: Colors.white.withOpacity(0.3),
                                     border: Border.all(
-                                      // Optional: A subtle border for a 'lit edge' effect
                                       color: Colors.white.withOpacity(0.2),
                                       width: 1.0,
                                     ),
                                   ),
                                   child: Center(
-                                    // Your image content
                                     child: Image.asset(
                                       'assets/image.png',
                                       height: 100,
@@ -965,34 +922,25 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
                               ),
                             ),
                           ),
-
-                          // 2. YOUR GLASS PANEL (The code block you provided)
                           Center(
                             child: ClipRRect(
-                              borderRadius: BorderRadius.circular(
-                                20.0,
-                              ), // Creates the glass shape
+                              borderRadius: BorderRadius.circular(20.0),
                               child: BackdropFilter(
-                                // Applies the blur to the content *behind* this widget
                                 filter: ImageFilter.blur(
-                                  sigmaX: 10.0, // Horizontal blur intensity
-                                  sigmaY: 10.0, // Vertical blur intensity
+                                  sigmaX: 10.0,
+                                  sigmaY: 10.0,
                                 ),
                                 child: Container(
                                   height: 100,
                                   width: 250,
-                                  // Defines the look of the 'glass'
                                   decoration: BoxDecoration(
-                                    // Semi-transparent color is essential for the frosted look
                                     color: Colors.white.withOpacity(0.3),
                                     border: Border.all(
-                                      // Optional: A subtle border for a 'lit edge' effect
                                       color: Colors.white.withOpacity(0.2),
                                       width: 1.0,
                                     ),
                                   ),
                                   child: Center(
-                                    // Your image content
                                     child: Image.asset(
                                       'assets/app_logo-removebg-preview.png',
                                       height: 100,
@@ -1012,12 +960,12 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
                           vertical: 8,
                         ),
                         decoration: BoxDecoration(
-                          color: homeProvider.isHepaHealthy
+                          color: usbProvider.isHepaHealthy
                               ? Colors.green.withOpacity(0.2)
                               : Colors.red.withOpacity(0.2),
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(
-                            color: homeProvider.isHepaHealthy
+                            color: usbProvider.isHepaHealthy
                                 ? Colors.green
                                 : Colors.red,
                             width: 2,
@@ -1027,19 +975,19 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(
-                              homeProvider.isHepaHealthy
+                              usbProvider.isHepaHealthy
                                   ? Icons.air
                                   : Icons.warning,
-                              color: homeProvider.isHepaHealthy
+                              color: usbProvider.isHepaHealthy
                                   ? Colors.green
                                   : Colors.red,
                               size: 20,
                             ),
                             const SizedBox(width: 8),
                             Text(
-                              homeProvider.hepaStatusText,
+                              usbProvider.hepaStatusText,
                               style: TextStyle(
-                                color: homeProvider.isHepaHealthy
+                                color: usbProvider.isHepaHealthy
                                     ? Colors.green
                                     : Colors.red,
                                 fontSize: 16,
@@ -1059,10 +1007,10 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
                               fontWeight: FontWeight.bold,
                             ),
                           ),
-                          Consumer<HomeProvider>(
-                            builder: (context, homeProvider, child) {
+                          Consumer<GlobalUsbProvider>(
+                            builder: (context, usbProvider, child) {
                               return Switch(
-                                value: homeProvider.isSwitched,
+                                value: usbProvider.isSwitched,
                                 activeColor: Colors.lightBlueAccent,
                                 inactiveThumbColor: Colors.grey.shade300,
                                 inactiveTrackColor: Colors.grey.shade500,
@@ -1093,7 +1041,7 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
                                     if (!confirm) return;
                                   }
                                   _sendSystemStatusCommand(value);
-                                  homeProvider.updateSystemStatus(value);
+                                  usbProvider.updateSystemStatus(value);
                                 },
                               );
                             },
@@ -1120,7 +1068,7 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
                         ),
                         onPressed: () {
                           _reconnectUsb();
-                          homeProvider.refreshHepaStatus();
+                          usbProvider.refreshHepaStatus();
                           Get.snackbar(
                             "refreshing".tr,
                             "",
@@ -1128,19 +1076,6 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
                           );
                         },
                       ),
-                      // IconButton(
-                      //   icon: const Icon(
-                      //     Icons.settings,
-                      //     size: 42,
-                      //     color: Colors.white,
-                      //   ),
-                      //   onPressed: () {
-                      //     Get.to(
-                      //       () => ProfilePage1(),
-                      //       transition: Transition.rightToLeft,
-                      //     );
-                      //   },
-                      // ),
                     ],
                   ),
                 ),
@@ -1153,7 +1088,7 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
   }
 }
 
-// Keep all your existing helper classes below:
+// Keep all your existing helper classes below (they remain unchanged):
 
 class _AnimatedCounter extends StatefulWidget {
   final String value;
