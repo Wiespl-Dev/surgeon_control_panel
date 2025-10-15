@@ -1,7 +1,7 @@
 // temp_gauge_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:surgeon_control_panel/provider/temperature_state.dart';
+import 'package:surgeon_control_panel/services/usb_service.dart';
 import 'dart:math' as math;
 import 'package:syncfusion_flutter_gauges/gauges.dart';
 
@@ -16,14 +16,20 @@ class _TempGaugeScreenState extends State<TempGaugeScreen> {
   @override
   void initState() {
     super.initState();
-    // Initialize the state when screen loads
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final temperatureState = Provider.of<TemperatureState>(
+      final usbProvider = Provider.of<GlobalUsbProvider>(
         context,
         listen: false,
       );
-      temperatureState.initSharedPreferences();
-      temperatureState.initUsb();
+      usbProvider.initUsb().then((_) {
+        // Wait a bit for USB to initialize, then request status
+        Future.delayed(Duration(seconds: 1), () {
+          if (usbProvider.isConnected) {
+            print("🔄 Screen requesting status...");
+            usbProvider.requestStatus();
+          }
+        });
+      });
     });
   }
 
@@ -46,8 +52,8 @@ class _TempGaugeScreenState extends State<TempGaugeScreen> {
               end: Alignment.bottomRight,
             ),
           ),
-          child: Consumer<TemperatureState>(
-            builder: (context, temperatureState, child) {
+          child: Consumer<GlobalUsbProvider>(
+            builder: (context, usbProvider, child) {
               return Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -64,13 +70,13 @@ class _TempGaugeScreenState extends State<TempGaugeScreen> {
                               vertical: 6,
                             ),
                             decoration: BoxDecoration(
-                              color: temperatureState.isConnected
+                              color: usbProvider.isConnected
                                   ? Colors.green
                                   : Colors.red,
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: Text(
-                              temperatureState.isConnected
+                              usbProvider.isConnected
                                   ? "Connected"
                                   : "Disconnected",
                               style: const TextStyle(
@@ -80,11 +86,11 @@ class _TempGaugeScreenState extends State<TempGaugeScreen> {
                               ),
                             ),
                           ),
-                          if (temperatureState.usbStatus.isNotEmpty)
+                          if (usbProvider.usbStatus.isNotEmpty)
                             Text(
-                              temperatureState.usbStatus.length > 20
-                                  ? "${temperatureState.usbStatus.substring(0, 20)}..."
-                                  : temperatureState.usbStatus,
+                              usbProvider.usbStatus.length > 20
+                                  ? "${usbProvider.usbStatus.substring(0, 20)}..."
+                                  : usbProvider.usbStatus,
                               style: const TextStyle(
                                 color: Colors.white70,
                                 fontSize: 10,
@@ -92,11 +98,39 @@ class _TempGaugeScreenState extends State<TempGaugeScreen> {
                             ),
                         ],
                       ),
-                      IconButton(
-                        onPressed: () {
-                          Navigator.pop(context);
-                        },
-                        icon: const Icon(Icons.close, color: Colors.white70),
+                      Row(
+                        children: [
+                          // Refresh button to request current status
+                          IconButton(
+                            onPressed: () {
+                              if (usbProvider.isConnected) {
+                                usbProvider.requestStatus();
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      "Requesting current status...",
+                                    ),
+                                    backgroundColor: Colors.blue,
+                                  ),
+                                );
+                              }
+                            },
+                            icon: const Icon(
+                              Icons.refresh,
+                              color: Colors.white70,
+                            ),
+                            tooltip: "Refresh current temperature",
+                          ),
+                          IconButton(
+                            onPressed: () {
+                              Navigator.pop(context);
+                            },
+                            icon: const Icon(
+                              Icons.close,
+                              color: Colors.white70,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -115,19 +149,35 @@ class _TempGaugeScreenState extends State<TempGaugeScreen> {
                   const SizedBox(height: 10),
 
                   // Current temperature display
-                  Text(
-                    "Current: ${temperatureState.temp}°C",
-                    style: const TextStyle(
-                      fontSize: 16,
-                      color: Colors.black,
-                      fontWeight: FontWeight.w600,
-                    ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        "Current: ${usbProvider.currentTemperature}°C",
+                        style: const TextStyle(
+                          fontSize: 16,
+                          color: Colors.black,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      if (usbProvider.currentTemperature == "--")
+                        const SizedBox(width: 8),
+                      if (usbProvider.currentTemperature == "--")
+                        const Text(
+                          "(No data)",
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.white70,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                    ],
                   ),
 
                   const SizedBox(height: 10),
 
                   Text(
-                    "Setpoint: ${temperatureState.pendingTemperature.toStringAsFixed(1)}°C",
+                    "Setpoint: ${usbProvider.pendingTemperature.toStringAsFixed(1)}°C",
                     style: const TextStyle(
                       fontSize: 16,
                       color: Colors.black,
@@ -160,7 +210,7 @@ class _TempGaugeScreenState extends State<TempGaugeScreen> {
                         double value = (normalized / sweepAngleRad) * 20 + 15;
                         value = value.clamp(15.0, 35.0);
 
-                        temperatureState.updatePendingTemperature(value);
+                        usbProvider.updatePendingTemperature(value);
                       },
                       child: SfRadialGauge(
                         axes: [
@@ -178,14 +228,14 @@ class _TempGaugeScreenState extends State<TempGaugeScreen> {
                             ),
                             pointers: [
                               RangePointer(
-                                value: temperatureState.pendingTemperature,
+                                value: usbProvider.pendingTemperature,
                                 width: 0.2,
                                 color: Colors.white,
                                 cornerStyle: CornerStyle.bothCurve,
                                 sizeUnit: GaugeSizeUnit.factor,
                               ),
                               MarkerPointer(
-                                value: temperatureState.pendingTemperature,
+                                value: usbProvider.pendingTemperature,
                                 markerType: MarkerType.circle,
                                 color: Colors.white,
                                 markerHeight: 20,
@@ -197,7 +247,7 @@ class _TempGaugeScreenState extends State<TempGaugeScreen> {
                                 angle: 90,
                                 positionFactor: 0,
                                 widget: Text(
-                                  "${temperatureState.pendingTemperature.toStringAsFixed(1)}°C",
+                                  "${usbProvider.pendingTemperature.toStringAsFixed(1)}°C",
                                   style: const TextStyle(
                                     fontSize: 32,
                                     fontWeight: FontWeight.bold,
@@ -215,7 +265,7 @@ class _TempGaugeScreenState extends State<TempGaugeScreen> {
                   const SizedBox(height: 20),
 
                   // Debug info
-                  if (temperatureState.lastReceivedValue != null)
+                  if (usbProvider.lastReceivedValue != null)
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.all(8),
@@ -223,13 +273,27 @@ class _TempGaugeScreenState extends State<TempGaugeScreen> {
                         color: Colors.black12,
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: Text(
-                        "Last received: ${temperatureState.lastReceivedValue!.length > 50 ? '${temperatureState.lastReceivedValue!.substring(0, 50)}...' : temperatureState.lastReceivedValue!}",
-                        style: const TextStyle(
-                          fontSize: 10,
-                          color: Colors.white70,
-                          fontFamily: 'Monospace',
-                        ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            "Last received: ${usbProvider.lastReceivedValue!.length > 50 ? '${usbProvider.lastReceivedValue!.substring(0, 50)}...' : usbProvider.lastReceivedValue!}",
+                            style: const TextStyle(
+                              fontSize: 10,
+                              color: Colors.white70,
+                              fontFamily: 'Monospace',
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            "Current temp in provider: ${usbProvider.currentTemperature}",
+                            style: const TextStyle(
+                              fontSize: 10,
+                              color: Colors.yellow,
+                              fontFamily: 'Monospace',
+                            ),
+                          ),
+                        ],
                       ),
                     ),
 
@@ -242,11 +306,11 @@ class _TempGaugeScreenState extends State<TempGaugeScreen> {
                       ElevatedButton(
                         onPressed: () {
                           try {
-                            temperatureState.sendCompleteStructure();
+                            usbProvider.sendCompleteStructure();
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
                                 content: Text(
-                                  "Temperature set to ${temperatureState.pendingTemperature.toStringAsFixed(1)}°C",
+                                  "Temperature set to ${usbProvider.pendingTemperature.toStringAsFixed(1)}°C",
                                 ),
                                 backgroundColor: Colors.green,
                               ),
@@ -273,6 +337,44 @@ class _TempGaugeScreenState extends State<TempGaugeScreen> {
                         ),
                         child: const Text(
                           "SET",
+                          style: TextStyle(fontSize: 14),
+                        ),
+                      ),
+                      // Add a refresh button for current status
+                      ElevatedButton(
+                        onPressed: () {
+                          if (usbProvider.isConnected) {
+                            usbProvider.requestStatus();
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  "Requesting current temperature...",
+                                ),
+                                backgroundColor: Colors.blue,
+                              ),
+                            );
+                          } else {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text("USB not connected"),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blue,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 20,
+                            vertical: 12,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(30),
+                          ),
+                        ),
+                        child: const Text(
+                          "REFRESH",
                           style: TextStyle(fontSize: 14),
                         ),
                       ),

@@ -31,20 +31,14 @@ class HumidityState with ChangeNotifier {
     humidity = _prefs.getString('current_humidity') ?? "--";
     _pendingHumidity = _prefs.getDouble('setpoint_humidity') ?? 50.0;
     notifyListeners();
-
-    print(
-      "Loaded saved values - Current: $humidity, Setpoint: $_pendingHumidity",
-    );
   }
 
   void _saveCurrentHumidity(String value) {
     _prefs.setString('current_humidity', value);
-    print("Saved current humidity: $value");
   }
 
   void _saveSetpointHumidity(double value) {
     _prefs.setDouble('setpoint_humidity', value);
-    print("Saved setpoint humidity: $value");
   }
 
   // Update pending humidity
@@ -70,7 +64,6 @@ class HumidityState with ChangeNotifier {
       }
 
       UsbDevice device = devices.first;
-      print("Connecting to: ${device.deviceName}");
 
       usbStatus = "Connecting to ${device.deviceName}...";
       notifyListeners();
@@ -87,7 +80,6 @@ class HumidityState with ChangeNotifier {
         isConnected = true;
         notifyListeners();
 
-        print("USB connected successfully");
         _port!.inputStream?.listen(_onDataReceived);
       } else {
         usbStatus = "Failed to open USB port";
@@ -104,7 +96,6 @@ class HumidityState with ChangeNotifier {
 
   void _onDataReceived(Uint8List data) {
     String str = String.fromCharCodes(data);
-    print("Received RAW chunk: $str");
 
     _incomingBuffer += str;
 

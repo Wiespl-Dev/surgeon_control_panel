@@ -1,7 +1,7 @@
 // humidity_gauge_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:surgeon_control_panel/provider/humidity_state.dart';
+import 'package:surgeon_control_panel/services/usb_service.dart';
 import 'dart:math' as math;
 import 'package:syncfusion_flutter_gauges/gauges.dart';
 
@@ -16,11 +16,20 @@ class _HumidityGaugeScreenState extends State<HumidityGaugeScreen> {
   @override
   void initState() {
     super.initState();
-    // Initialize the state when screen loads
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final humidityState = Provider.of<HumidityState>(context, listen: false);
-      humidityState.initSharedPreferences();
-      humidityState.initUsb();
+      final usbProvider = Provider.of<GlobalUsbProvider>(
+        context,
+        listen: false,
+      );
+      usbProvider.initUsb().then((_) {
+        // Wait a bit for USB to initialize, then request status
+        Future.delayed(Duration(seconds: 1), () {
+          if (usbProvider.isConnected) {
+            print("🔄 Screen requesting status...");
+            usbProvider.requestStatus();
+          }
+        });
+      });
     });
   }
 
@@ -43,8 +52,8 @@ class _HumidityGaugeScreenState extends State<HumidityGaugeScreen> {
               end: Alignment.bottomRight,
             ),
           ),
-          child: Consumer<HumidityState>(
-            builder: (context, humidityState, child) {
+          child: Consumer<GlobalUsbProvider>(
+            builder: (context, usbProvider, child) {
               return Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -61,13 +70,13 @@ class _HumidityGaugeScreenState extends State<HumidityGaugeScreen> {
                               vertical: 6,
                             ),
                             decoration: BoxDecoration(
-                              color: humidityState.isConnected
+                              color: usbProvider.isConnected
                                   ? Colors.green
                                   : Colors.red,
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: Text(
-                              humidityState.isConnected
+                              usbProvider.isConnected
                                   ? "Connected"
                                   : "Disconnected",
                               style: const TextStyle(
@@ -77,11 +86,11 @@ class _HumidityGaugeScreenState extends State<HumidityGaugeScreen> {
                               ),
                             ),
                           ),
-                          if (humidityState.usbStatus.isNotEmpty)
+                          if (usbProvider.usbStatus.isNotEmpty)
                             Text(
-                              humidityState.usbStatus.length > 20
-                                  ? "${humidityState.usbStatus.substring(0, 20)}..."
-                                  : humidityState.usbStatus,
+                              usbProvider.usbStatus.length > 20
+                                  ? "${usbProvider.usbStatus.substring(0, 20)}..."
+                                  : usbProvider.usbStatus,
                               style: const TextStyle(
                                 color: Colors.white70,
                                 fontSize: 10,
@@ -89,11 +98,39 @@ class _HumidityGaugeScreenState extends State<HumidityGaugeScreen> {
                             ),
                         ],
                       ),
-                      IconButton(
-                        onPressed: () {
-                          Navigator.pop(context);
-                        },
-                        icon: const Icon(Icons.close, color: Colors.white70),
+                      Row(
+                        children: [
+                          // Refresh button to request current status
+                          IconButton(
+                            onPressed: () {
+                              if (usbProvider.isConnected) {
+                                usbProvider.requestStatus();
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      "Requesting current status...",
+                                    ),
+                                    backgroundColor: Colors.blue,
+                                  ),
+                                );
+                              }
+                            },
+                            icon: const Icon(
+                              Icons.refresh,
+                              color: Colors.white70,
+                            ),
+                            tooltip: "Refresh current humidity",
+                          ),
+                          IconButton(
+                            onPressed: () {
+                              Navigator.pop(context);
+                            },
+                            icon: const Icon(
+                              Icons.close,
+                              color: Colors.white70,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -112,19 +149,35 @@ class _HumidityGaugeScreenState extends State<HumidityGaugeScreen> {
                   const SizedBox(height: 10),
 
                   // Current humidity display
-                  Text(
-                    "Current: ${humidityState.humidity}%",
-                    style: const TextStyle(
-                      fontSize: 16,
-                      color: Colors.black,
-                      fontWeight: FontWeight.w600,
-                    ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        "Current: ${usbProvider.currentHumidity}%",
+                        style: const TextStyle(
+                          fontSize: 16,
+                          color: Colors.black,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      if (usbProvider.currentHumidity == "--")
+                        const SizedBox(width: 8),
+                      if (usbProvider.currentHumidity == "--")
+                        const Text(
+                          "(No data)",
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.white70,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                    ],
                   ),
 
                   const SizedBox(height: 10),
 
                   Text(
-                    "Setpoint: ${humidityState.pendingHumidity.toStringAsFixed(1)}%",
+                    "Setpoint: ${usbProvider.pendingHumidity.toStringAsFixed(1)}%",
                     style: const TextStyle(
                       fontSize: 16,
                       color: Colors.black,
@@ -157,7 +210,7 @@ class _HumidityGaugeScreenState extends State<HumidityGaugeScreen> {
                         double value = (normalized / sweepAngleRad) * 100;
                         value = value.clamp(0.0, 100.0);
 
-                        humidityState.updatePendingHumidity(value);
+                        usbProvider.updatePendingHumidity(value);
                       },
                       child: SfRadialGauge(
                         axes: [
@@ -175,14 +228,14 @@ class _HumidityGaugeScreenState extends State<HumidityGaugeScreen> {
                             ),
                             pointers: [
                               RangePointer(
-                                value: humidityState.pendingHumidity,
+                                value: usbProvider.pendingHumidity,
                                 width: 0.2,
                                 color: Colors.white,
                                 cornerStyle: CornerStyle.bothCurve,
                                 sizeUnit: GaugeSizeUnit.factor,
                               ),
                               MarkerPointer(
-                                value: humidityState.pendingHumidity,
+                                value: usbProvider.pendingHumidity,
                                 markerType: MarkerType.circle,
                                 color: Colors.white,
                                 markerHeight: 20,
@@ -194,7 +247,7 @@ class _HumidityGaugeScreenState extends State<HumidityGaugeScreen> {
                                 angle: 90,
                                 positionFactor: 0,
                                 widget: Text(
-                                  "${humidityState.pendingHumidity.toStringAsFixed(1)}%",
+                                  "${usbProvider.pendingHumidity.toStringAsFixed(1)}%",
                                   style: const TextStyle(
                                     fontSize: 32,
                                     fontWeight: FontWeight.bold,
@@ -212,7 +265,7 @@ class _HumidityGaugeScreenState extends State<HumidityGaugeScreen> {
                   const SizedBox(height: 20),
 
                   // Debug info
-                  if (humidityState.lastReceivedValue != null)
+                  if (usbProvider.lastReceivedValue != null)
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.all(8),
@@ -220,13 +273,27 @@ class _HumidityGaugeScreenState extends State<HumidityGaugeScreen> {
                         color: Colors.black12,
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: Text(
-                        "Last received: ${humidityState.lastReceivedValue!.length > 50 ? '${humidityState.lastReceivedValue!.substring(0, 50)}...' : humidityState.lastReceivedValue!}",
-                        style: const TextStyle(
-                          fontSize: 10,
-                          color: Colors.white70,
-                          fontFamily: 'Monospace',
-                        ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            "Last received: ${usbProvider.lastReceivedValue!.length > 50 ? '${usbProvider.lastReceivedValue!.substring(0, 50)}...' : usbProvider.lastReceivedValue!}",
+                            style: const TextStyle(
+                              fontSize: 10,
+                              color: Colors.white70,
+                              fontFamily: 'Monospace',
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            "Current humidity in provider: ${usbProvider.currentHumidity}",
+                            style: const TextStyle(
+                              fontSize: 10,
+                              color: Colors.yellow,
+                              fontFamily: 'Monospace',
+                            ),
+                          ),
+                        ],
                       ),
                     ),
 
@@ -236,50 +303,14 @@ class _HumidityGaugeScreenState extends State<HumidityGaugeScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
-                      // ElevatedButton(
-                      //   onPressed: humidityState.reconnectUsb,
-                      //   style: ElevatedButton.styleFrom(
-                      //     backgroundColor: Colors.blue,
-                      //     foregroundColor: Colors.white,
-                      //     padding: const EdgeInsets.symmetric(
-                      //       horizontal: 16,
-                      //       vertical: 12,
-                      //     ),
-                      //     shape: RoundedRectangleBorder(
-                      //       borderRadius: BorderRadius.circular(30),
-                      //     ),
-                      //   ),
-                      //   child: const Text(
-                      //     "RECONNECT",
-                      //     style: TextStyle(fontSize: 12),
-                      //   ),
-                      // ),
-                      // ElevatedButton(
-                      //   onPressed: humidityState.requestStatus,
-                      //   style: ElevatedButton.styleFrom(
-                      //     backgroundColor: Colors.orange,
-                      //     foregroundColor: Colors.white,
-                      //     padding: const EdgeInsets.symmetric(
-                      //       horizontal: 16,
-                      //       vertical: 12,
-                      //     ),
-                      //     shape: RoundedRectangleBorder(
-                      //       borderRadius: BorderRadius.circular(30),
-                      //     ),
-                      //   ),
-                      //   child: const Text(
-                      //     "STATUS",
-                      //     style: TextStyle(fontSize: 12),
-                      //   ),
-                      // ),
                       ElevatedButton(
                         onPressed: () {
                           try {
-                            humidityState.sendCompleteStructure();
+                            usbProvider.sendCompleteStructure();
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
                                 content: Text(
-                                  "Humidity set to ${humidityState.pendingHumidity.toStringAsFixed(1)}%",
+                                  "Humidity set to ${usbProvider.pendingHumidity.toStringAsFixed(1)}%",
                                 ),
                                 backgroundColor: Colors.green,
                               ),
@@ -306,6 +337,42 @@ class _HumidityGaugeScreenState extends State<HumidityGaugeScreen> {
                         ),
                         child: const Text(
                           "SET",
+                          style: TextStyle(fontSize: 14),
+                        ),
+                      ),
+                      // Add a refresh button for current status
+                      ElevatedButton(
+                        onPressed: () {
+                          if (usbProvider.isConnected) {
+                            usbProvider.requestStatus();
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text("Requesting current humidity..."),
+                                backgroundColor: Colors.blue,
+                              ),
+                            );
+                          } else {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text("USB not connected"),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blue,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 20,
+                            vertical: 12,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(30),
+                          ),
+                        ),
+                        child: const Text(
+                          "REFRESH",
                           style: TextStyle(fontSize: 14),
                         ),
                       ),
