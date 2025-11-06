@@ -1,12 +1,31 @@
-// room_cleanliness_container.dart
 import 'dart:ui';
-
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:surgeon_control_panel/patient%20info/clean/cleanll.dart';
+import 'package:surgeon_control_panel/provider/room_cleanliness_provider.dart';
 import 'dart:io';
 
-import 'package:surgeon_control_panel/provider/room_cleanliness_provider.dart';
+// -------------------------------------------------------------------
+// 1. Data Model Class (Moved here for organization)
+// -------------------------------------------------------------------
+class CleaningProtocolItem {
+  final int serialNo;
+  final String activity;
+
+  // Editable fields:
+  String areaEquipment;
+  String selectedDisinfectant;
+  bool isSignedOff;
+
+  CleaningProtocolItem({
+    required this.serialNo,
+    required this.activity,
+    required this.areaEquipment,
+    required this.selectedDisinfectant,
+    this.isSignedOff = false,
+  });
+}
 
 class RoomCleanlinessContainer extends StatefulWidget {
   @override
@@ -15,6 +34,93 @@ class RoomCleanlinessContainer extends StatefulWidget {
 }
 
 class _RoomCleanlinessContainerState extends State<RoomCleanlinessContainer> {
+  // Define a dark, premium color scheme
+  static const Color _primaryAccent = Color(0xFF4FC3F7); // Light blue/cyan
+  static const Color _darkBackground = Color(
+    0xFF1A1A2E,
+  ); // Deep dark blue/purple
+
+  // -------------------------------------------------------------------
+  // 2. Data Initialization for Cleaning Protocol
+  // -------------------------------------------------------------------
+  final List<String> _disinfectantOptions = const [
+    '--',
+    'Hospital-grade',
+    'Chlorine/Quaternary',
+    'As per manual',
+    'Alcohol/EPA approved',
+    'Soap/Alcohol rub',
+  ];
+
+  final List<CleaningProtocolItem> _protocolItems = [
+    CleaningProtocolItem(
+      serialNo: 1,
+      activity: 'Remove soiled linen/waste',
+      areaEquipment: 'OT, bins',
+      selectedDisinfectant: '--',
+    ),
+    CleaningProtocolItem(
+      serialNo: 2,
+      activity: 'Clean & disinfect high-touch surfaces',
+      areaEquipment: 'Operating table, lights',
+      selectedDisinfectant: 'Hospital-grade',
+    ),
+    CleaningProtocolItem(
+      serialNo: 3,
+      activity: 'Clean & disinfect door knobs, switches',
+      areaEquipment: 'Doors, panels',
+      selectedDisinfectant: 'Hospital-grade',
+    ),
+    CleaningProtocolItem(
+      serialNo: 4,
+      activity: 'Sweep & mop floor (esp. around operating area)',
+      areaEquipment: 'Floor (1.5 m from table)',
+      selectedDisinfectant: 'Chlorine/Quaternary',
+    ),
+    CleaningProtocolItem(
+      serialNo: 5,
+      activity: 'Clean & disinfect anesthesia machine/carts',
+      areaEquipment: 'Anesthesia equipment',
+      selectedDisinfectant: 'As per manual',
+    ),
+    CleaningProtocolItem(
+      serialNo: 6,
+      activity: 'Clean & disinfect patient monitors/IV poles',
+      areaEquipment: 'Monitors, IV stand',
+      selectedDisinfectant: 'Alcohol/EPA approved',
+    ),
+    CleaningProtocolItem(
+      serialNo: 7,
+      activity: 'Clean positioners, arm boards, stirrups',
+      areaEquipment: 'OT accessories',
+      selectedDisinfectant: 'Hospital-grade',
+    ),
+    CleaningProtocolItem(
+      serialNo: 8,
+      activity: 'Change bin liners',
+      areaEquipment: 'Bins',
+      selectedDisinfectant: '--',
+    ),
+    CleaningProtocolItem(
+      serialNo: 9,
+      activity: 'Perform hand hygiene after cleaning',
+      areaEquipment: 'Staff',
+      selectedDisinfectant: 'Soap/Alcohol rub',
+    ),
+    CleaningProtocolItem(
+      serialNo: 10,
+      activity: 'Ventilate room',
+      areaEquipment: 'OT',
+      selectedDisinfectant: '--',
+    ),
+    CleaningProtocolItem(
+      serialNo: 11,
+      activity: 'Final walkthrough & checklist completion',
+      areaEquipment: 'Whole OT',
+      selectedDisinfectant: '--',
+    ),
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -23,6 +129,7 @@ class _RoomCleanlinessContainerState extends State<RoomCleanlinessContainer> {
         context,
         listen: false,
       );
+      // Initialize cameras and check USB status on launch
       provider.initializeApp();
     });
   }
@@ -30,11 +137,12 @@ class _RoomCleanlinessContainerState extends State<RoomCleanlinessContainer> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color.fromARGB(8, 38, 50, 56),
+      backgroundColor: _darkBackground,
       body: Center(
         child: Stack(
           alignment: Alignment.center,
           children: [
+            // 1. Full-screen Background Image with Dark Overlay
             Container(
               width: double.infinity,
               height: double.infinity,
@@ -43,71 +151,126 @@ class _RoomCleanlinessContainerState extends State<RoomCleanlinessContainer> {
                 fit: BoxFit.cover,
               ),
             ),
+            // Darker overlay for better text/glass readability
+            Container(color: Colors.black.withOpacity(0.5)),
+
+            // 2. Main Content Area
             Center(
               child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
+                  const SizedBox(height: 20),
+                  // --- Header (Fixed Height) ---
                   Padding(
-                    padding: const EdgeInsets.only(top: 10, bottom: 20),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(20.0),
-                      child: BackdropFilter(
-                        filter: ImageFilter.blur(sigmaX: 10.0, sigmaY: 10.0),
-                        child: Container(
-                          height: 60,
-                          width: 450,
-                          decoration: BoxDecoration(
-                            color: const Color.fromARGB(
-                              33,
-                              255,
-                              255,
-                              255,
-                            ).withOpacity(0.1),
-                            border: Border.all(
-                              color: const Color.fromARGB(
-                                48,
-                                255,
-                                255,
-                                255,
-                              ).withOpacity(0.1),
-                              width: 1.5,
-                            ),
-                            borderRadius: BorderRadius.circular(20),
+                    padding: const EdgeInsets.all(8.0),
+                    child: _buildHeader(context),
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Main Content Area with Camera and Table
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20.0),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Left Side - Camera Section
+                          Expanded(
+                            flex: 1,
+                            child: _buildGlassContainer(child: _buildContent()),
                           ),
-                          child: Center(
-                            child: Text(
-                              "Room Cleanliness Assessment",
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 25,
-                                color: Colors.black26,
-                              ),
+                          const SizedBox(width: 20),
+
+                          // Right Side - Cleaning Protocol Table
+                          Expanded(
+                            flex: 2,
+                            child: _buildGlassContainer(
+                              child: _buildCleaningProtocolTable(),
                             ),
                           ),
-                        ),
+                        ],
                       ),
                     ),
                   ),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(20.0),
-                    child: BackdropFilter(
-                      filter: ImageFilter.blur(sigmaX: 10.0, sigmaY: 10.0),
-                      child: Container(
-                        height: 580,
-                        width: 700,
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.2),
-                          border: Border.all(
-                            color: Colors.white.withOpacity(0.3),
-                            width: 1.5,
-                          ),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: _buildContent(),
-                      ),
-                    ),
-                  ),
+
+                  const SizedBox(height: 20),
+
+                  // --- Action Buttons (Fixed Height) ---
+                  SizedBox(width: 700, child: _buildActionButtons(context)),
+
+                  // Added small spacing at the very bottom
+                  const SizedBox(height: 20),
                 ],
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGlassContainer({double? height, required Widget child}) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20.0),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 15.0, sigmaY: 15.0),
+        child: Container(
+          height: height,
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.1),
+            border: Border.all(
+              color: Colors.white.withOpacity(0.2),
+              width: 1.0,
+            ),
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: _primaryAccent.withOpacity(0.15),
+                blurRadius: 30,
+                spreadRadius: -10,
+              ),
+            ],
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader(BuildContext context) {
+    final provider = Provider.of<RoomCleanlinessProvider>(context);
+
+    return _buildGlassContainer(
+      height: 60,
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            IconButton(
+              onPressed: () {
+                Navigator.pop(context);
+              },
+              icon: Icon(Icons.arrow_back, color: Colors.white),
+            ),
+            Text(
+              "Room Cleanliness Assessment",
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 22,
+                color: Colors.white.withOpacity(0.9),
+              ),
+            ),
+            IconButton(
+              icon: Icon(
+                provider.usbConnected ? Icons.usb : Icons.usb_off,
+                color: provider.usbConnected
+                    ? Colors.greenAccent
+                    : Colors.orangeAccent,
+                size: 24,
+              ),
+              onPressed: () => _showStorageInfo(context),
+              tooltip: 'Storage Information',
             ),
           ],
         ),
@@ -119,55 +282,49 @@ class _RoomCleanlinessContainerState extends State<RoomCleanlinessContainer> {
     return Consumer<RoomCleanlinessProvider>(
       builder: (context, provider, child) {
         return Padding(
-          padding: const EdgeInsets.all(8.0),
+          padding: const EdgeInsets.all(20.0),
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Status Row
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    'Room Clean',
+                    'STATUS: ${provider.showCameraPreview
+                        ? "Camera Live"
+                        : provider.capturedImage != null
+                        ? "Photo Ready"
+                        : "Awaiting Input"}',
                     style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white70,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: _primaryAccent.withOpacity(0.8),
+                      letterSpacing: 1,
                     ),
                   ),
-                  Row(
-                    children: [
-                      IconButton(
-                        icon: Icon(
-                          provider.usbConnected ? Icons.usb : Icons.usb_off,
-                          color: provider.usbConnected
-                              ? Colors.green
-                              : Colors.orange,
-                        ),
-                        onPressed: () => _showStorageInfo(context),
-                        tooltip: 'Storage Information',
+                  if (!provider.usbConnected)
+                    Text(
+                      '⚠ USB Required',
+                      style: TextStyle(
+                        color: Colors.orangeAccent,
+                        fontSize: 14,
                       ),
-                      if (!provider.usbConnected)
-                        Text(
-                          'Select USB',
-                          style: TextStyle(color: Colors.orange, fontSize: 12),
-                        ),
-                    ],
-                  ),
+                    ),
                 ],
               ),
-              SizedBox(height: 20),
+              const Divider(color: Colors.white30, height: 20),
+
+              // Media Area
               Expanded(
                 child: Container(
                   decoration: BoxDecoration(
                     color: Colors.black.withOpacity(0.4),
                     borderRadius: BorderRadius.circular(15),
-                    border: Border.all(color: Colors.white.withOpacity(0.3)),
                   ),
                   child: _buildMediaArea(provider),
                 ),
               ),
-              SizedBox(height: 20),
-              _buildActionButtons(provider),
             ],
           ),
         );
@@ -175,27 +332,360 @@ class _RoomCleanlinessContainerState extends State<RoomCleanlinessContainer> {
     );
   }
 
+  Widget _buildCleaningProtocolTable() {
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        children: [
+          // Table Header
+          Text(
+            'Cleaning Protocol Checklist',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Table
+          Expanded(
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.3),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: SingleChildScrollView(
+                scrollDirection: Axis.vertical,
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: DataTable(
+                    headingRowColor: MaterialStateProperty.all(
+                      _primaryAccent.withOpacity(0.2),
+                    ),
+                    columnSpacing: 12.0,
+                    dataRowMinHeight: 60,
+                    dataRowMaxHeight: 80,
+                    columns: const [
+                      DataColumn(
+                        label: Text(
+                          'No.',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                      DataColumn(
+                        label: Text(
+                          'Cleaning Activity',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                      DataColumn(
+                        label: Text(
+                          'Area/Equipment',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                      DataColumn(
+                        label: Text(
+                          'Disinfectant',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                      DataColumn(
+                        label: Text(
+                          'Sign-off',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
+                    rows: _protocolItems.map((item) {
+                      return DataRow(
+                        cells: [
+                          // Serial No.
+                          DataCell(
+                            Text(
+                              item.serialNo.toString(),
+                              style: TextStyle(color: Colors.white70),
+                            ),
+                          ),
+
+                          // Cleaning Activity (Read-only)
+                          DataCell(
+                            SizedBox(
+                              width: 150,
+                              child: Text(
+                                item.activity,
+                                softWrap: true,
+                                style: TextStyle(
+                                  fontSize: 12.0,
+                                  color: Colors.white70,
+                                ),
+                              ),
+                            ),
+                          ),
+
+                          // Area/Equipment (TextFormField)
+                          DataCell(
+                            SizedBox(
+                              width: 120,
+                              child: TextFormField(
+                                initialValue: item.areaEquipment,
+                                decoration: InputDecoration(
+                                  border: OutlineInputBorder(
+                                    borderSide: BorderSide(
+                                      color: _primaryAccent,
+                                    ),
+                                  ),
+                                  isDense: true,
+                                  contentPadding: EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  filled: true,
+                                  fillColor: Colors.black.withOpacity(0.4),
+                                ),
+                                style: TextStyle(
+                                  fontSize: 12.0,
+                                  color: Colors.white,
+                                ),
+                                onChanged: (newValue) {
+                                  setState(() {
+                                    item.areaEquipment = newValue;
+                                  });
+                                },
+                              ),
+                            ),
+                          ),
+
+                          // Disinfectant Used (DropdownButtonFormField)
+                          DataCell(
+                            SizedBox(
+                              width: 140,
+                              child: DropdownButtonFormField<String>(
+                                decoration: InputDecoration(
+                                  border: OutlineInputBorder(
+                                    borderSide: BorderSide(
+                                      color: _primaryAccent,
+                                    ),
+                                  ),
+                                  isDense: true,
+                                  contentPadding: EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  filled: true,
+                                  fillColor: Colors.black.withOpacity(0.4),
+                                ),
+                                value: item.selectedDisinfectant,
+                                dropdownColor: _darkBackground,
+                                style: TextStyle(
+                                  fontSize: 12.0,
+                                  color: Colors.white,
+                                ),
+                                items: _disinfectantOptions.map((String value) {
+                                  return DropdownMenuItem<String>(
+                                    value: value,
+                                    child: Text(
+                                      value,
+                                      style: TextStyle(
+                                        fontSize: 12.0,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  );
+                                }).toList(),
+                                onChanged: (String? newValue) {
+                                  setState(() {
+                                    item.selectedDisinfectant =
+                                        newValue ?? _disinfectantOptions.first;
+                                  });
+                                },
+                              ),
+                            ),
+                          ),
+
+                          // Sign-off (Checkbox)
+                          DataCell(
+                            Consumer<RoomCleanlinessProvider>(
+                              builder: (context, provider, child) {
+                                return Checkbox(
+                                  value: item.isSignedOff,
+                                  checkColor: Colors.black,
+                                  fillColor:
+                                      MaterialStateProperty.resolveWith<Color>((
+                                        Set<MaterialState> states,
+                                      ) {
+                                        if (states.contains(
+                                          MaterialState.selected,
+                                        )) {
+                                          return _primaryAccent;
+                                        }
+                                        return Colors.white30;
+                                      }),
+                                  onChanged: (bool? newValue) async {
+                                    if (newValue == true &&
+                                        provider.usbConnected) {
+                                      // Auto-take photo when checkbox is checked
+                                      await _autoTakePhotoForActivity(
+                                        provider,
+                                        item,
+                                      );
+                                    }
+                                    setState(() {
+                                      item.isSignedOff = newValue ?? false;
+                                    });
+                                  },
+                                );
+                              },
+                            ),
+                          ),
+                        ],
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+          // Submit Button
+          const SizedBox(height: 16),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _primaryAccent,
+              foregroundColor: Colors.black,
+              minimumSize: const Size(double.infinity, 50),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            onPressed: () {
+              // Log the final data
+              print('--- Final Protocol Data ---');
+              for (var item in _protocolItems) {
+                print(
+                  'No: ${item.serialNo} | Activity: ${item.activity} | Area: ${item.areaEquipment} | Disinfectant: ${item.selectedDisinfectant} | Signed Off: ${item.isSignedOff ? "OK" : "NOT OK"}',
+                );
+              }
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => CleanControlApp()),
+              );
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Cleaning Protocol Data Collected!'),
+                  backgroundColor: Colors.green,
+                ),
+              );
+            },
+            child: const Text(
+              'Submit Protocol Data',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _autoTakePhotoForActivity(
+    RoomCleanlinessProvider provider,
+    CleaningProtocolItem item,
+  ) async {
+    if (!provider.usbConnected) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Please select USB storage first'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    // Ensure camera is started
+    if (!provider.showCameraPreview) {
+      provider.startCamera();
+      // Wait for camera to initialize
+      await Future.delayed(Duration(milliseconds: 1000));
+    }
+
+    // Take photo with activity name as filename
+    final String fileName =
+        '${item.serialNo}_${_sanitizeFileName(item.activity)}.jpg';
+
+    try {
+      await provider.takePhotoWithCustomName(fileName);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Photo saved for: ${item.activity}'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to take photo: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  String _sanitizeFileName(String input) {
+    // Remove or replace characters that are not allowed in filenames
+    return input
+        .replaceAll(
+          RegExp(r'[<>:"/\\|?*]'),
+          '_',
+        ) // Replace invalid filename characters
+        .replaceAll(RegExp(r'\s+'), '_') // Replace spaces with underscores
+        .replaceAll(
+          RegExp(r'_+'),
+          '_',
+        ) // Replace multiple underscores with single
+        .trim()
+        .toLowerCase();
+  }
+
   Widget _buildMediaArea(RoomCleanlinessProvider provider) {
     if (provider.showCameraPreview) {
-      if (provider.isCameraInitialized &&
-          provider.cameraController != null &&
-          provider.cameraController!.value.isInitialized) {
+      if (provider.isCameraInitialized && provider.cameraController != null) {
         return ClipRRect(
           borderRadius: BorderRadius.circular(15),
-          child: CameraPreview(provider.cameraController!),
+          child: AspectRatio(
+            aspectRatio: provider.cameraController!.value.aspectRatio,
+            child: CameraPreview(provider.cameraController!),
+          ),
         );
       } else {
         return Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              CircularProgressIndicator(),
-              SizedBox(height: 10),
+              const CircularProgressIndicator(color: _primaryAccent),
+              const SizedBox(height: 20),
               Text(
                 'Initializing Camera...',
                 style: TextStyle(
                   color: Colors.white.withOpacity(0.7),
-                  fontSize: 16,
+                  fontSize: 18,
                 ),
               ),
             ],
@@ -217,39 +707,39 @@ class _RoomCleanlinessContainerState extends State<RoomCleanlinessContainer> {
           children: [
             Icon(
               Icons.photo_camera,
-              size: 60,
-              color: Colors.white.withOpacity(0.7),
+              size: 80,
+              color: Colors.white.withOpacity(0.5),
             ),
-            SizedBox(height: 10),
+            const SizedBox(height: 20),
             Text(
-              'No Photo Taken',
+              'Ready for Room Assessment',
               style: TextStyle(
-                color: Colors.white.withOpacity(0.7),
-                fontSize: 16,
+                color: Colors.white.withOpacity(0.8),
+                fontSize: 22,
+                fontWeight: FontWeight.w500,
               ),
             ),
-            SizedBox(height: 10),
+            const SizedBox(height: 15),
             Text(
               provider.usbConnected
-                  ? '✅ Photos will be saved to USB Storage'
-                  : '⚠ Please select USB storage first',
+                  ? 'Photos will be saved to USB Storage'
+                  : '⚠ Please select USB storage first to enable photo capture.',
               style: TextStyle(
-                color: provider.usbConnected ? Colors.green : Colors.orange,
-                fontSize: 12,
+                color: provider.usbConnected
+                    ? Colors.greenAccent
+                    : Colors.orangeAccent,
+                fontSize: 16,
               ),
               textAlign: TextAlign.center,
             ),
             if (!provider.usbConnected)
               Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: ElevatedButton.icon(
-                  icon: Icon(Icons.usb),
-                  label: Text('Select USB Storage'),
-                  onPressed: () => provider.selectUSBDirectory(),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.orange,
-                    foregroundColor: Colors.white,
-                  ),
+                padding: const EdgeInsets.only(top: 20.0),
+                child: _buildGlassButton(
+                  label: 'Select USB Storage',
+                  icon: Icons.usb,
+                  color: Colors.orange,
+                  onPressed: () => _selectUSBAndStartCamera(provider),
                 ),
               ),
           ],
@@ -258,22 +748,56 @@ class _RoomCleanlinessContainerState extends State<RoomCleanlinessContainer> {
     }
   }
 
-  Widget _buildActionButtons(RoomCleanlinessProvider provider) {
+  Widget _buildGlassButton({
+    required String label,
+    required IconData icon,
+    required Color color,
+    VoidCallback? onPressed,
+  }) {
+    return ElevatedButton.icon(
+      icon: Icon(icon, size: 20),
+      label: Text(label),
+      onPressed: onPressed,
+      style: ElevatedButton.styleFrom(
+        backgroundColor: color.withOpacity(0.8),
+        foregroundColor: Colors.white,
+        elevation: 10,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+        padding: const EdgeInsets.symmetric(horizontal: 25, vertical: 15),
+        textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+      ),
+    );
+  }
+
+  Widget _buildActionButton(
+    String label,
+    IconData icon,
+    Color color,
+    VoidCallback? onPressed,
+  ) {
+    return _buildGlassButton(
+      label: label,
+      icon: icon,
+      color: color,
+      onPressed: onPressed,
+    );
+  }
+
+  Widget _buildActionButtons(BuildContext context) {
+    final provider = Provider.of<RoomCleanlinessProvider>(
+      context,
+      listen: false,
+    );
+
     if (provider.showCameraPreview) {
       return Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          ElevatedButton.icon(
-            icon: Icon(Icons.cancel, size: 20),
-            label: Text('Cancel'),
-            onPressed: () => provider.cancelCamera(),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red.withOpacity(0.8),
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
+          _buildActionButton(
+            'Cancel',
+            Icons.cancel,
+            Colors.red,
+            () => provider.cancelCamera(),
           ),
           FloatingActionButton(
             onPressed: provider.isTakingPhoto
@@ -281,80 +805,48 @@ class _RoomCleanlinessContainerState extends State<RoomCleanlinessContainer> {
                 : () => provider.takePhoto(),
             backgroundColor: provider.isTakingPhoto
                 ? Colors.grey
-                : Colors.white,
+                : _primaryAccent,
             child: provider.isTakingPhoto
-                ? CircularProgressIndicator()
-                : Icon(Icons.camera_alt, color: Colors.blue, size: 30),
+                ? const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                      color: Colors.white,
+                      strokeWidth: 3,
+                    ),
+                  )
+                : const Icon(Icons.camera, color: Colors.black, size: 30),
           ),
+          const SizedBox(width: 120),
         ],
       );
     } else if (provider.capturedImage != null) {
       return Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          ElevatedButton.icon(
-            icon: Icon(Icons.refresh, size: 20),
-            label: Text('Retake'),
-            onPressed: () => provider.retakePhoto(),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.orange.withOpacity(0.8),
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
+          _buildActionButton(
+            'Retake Photo',
+            Icons.refresh,
+            Colors.orange,
+            () => provider.retakePhoto(),
           ),
-          ElevatedButton.icon(
-            icon: Icon(Icons.check, size: 20),
-            label: Text('Use Photo'),
-            onPressed: () => _processPhotoForAssessment(context),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green.withOpacity(0.8),
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
+          _buildActionButton(
+            'Use Photo',
+            Icons.check,
+            Colors.green,
+            () => _processPhotoForAssessment(context),
           ),
         ],
       );
     } else {
-      return Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          ElevatedButton.icon(
-            icon: Icon(Icons.camera_alt, size: 20),
-            label: Text('Take Photo'),
-            onPressed: provider.usbConnected
-                ? () => provider.startCamera()
-                : null,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: provider.usbConnected
-                  ? Colors.blue.withOpacity(0.8)
-                  : Colors.grey,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
-          ),
-          ElevatedButton.icon(
-            icon: Icon(Icons.photo_library, size: 20),
-            label: Text('Gallery'),
-            onPressed: provider.usbConnected
-                ? () => provider.pickImageFromGallery()
-                : null,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: provider.usbConnected
-                  ? Colors.purple.withOpacity(0.8)
-                  : Colors.grey,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
-          ),
-        ],
+      // Only show "Take Photo" button when USB is connected
+      return Center(
+        child: _buildActionButton(
+          'Take Photo',
+          Icons.camera_alt,
+          Colors.blue,
+          provider.usbConnected ? () => provider.startCamera() : null,
+        ),
       );
     }
   }
@@ -365,9 +857,19 @@ class _RoomCleanlinessContainerState extends State<RoomCleanlinessContainer> {
       listen: false,
     );
     if (provider.capturedImage == null) return;
-
     print('Processing photo for assessment: ${provider.capturedImage!.path}');
-    _showAssessmentResults(context, provider.capturedImage!.path);
+  }
+
+  void _selectUSBAndStartCamera(RoomCleanlinessProvider provider) async {
+    // First select USB directory
+    await provider.selectUSBDirectory();
+
+    // If USB is successfully connected, automatically start the camera
+    if (provider.usbConnected) {
+      // Add a small delay to ensure USB selection is complete
+      await Future.delayed(Duration(milliseconds: 500));
+      provider.startCamera();
+    }
   }
 
   void _showStorageInfo(BuildContext context) {
@@ -375,67 +877,44 @@ class _RoomCleanlinessContainerState extends State<RoomCleanlinessContainer> {
       context,
       listen: false,
     );
-    String path = provider.usbPath ?? "Not selected";
-    String cleanSnapshotPath = provider.cleanSnapshotPath;
-
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Storage Information'),
+        backgroundColor: _darkBackground,
+        title: Text(
+          'Storage Information',
+          style: TextStyle(color: Colors.white),
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               '💾 Storage Type: ${provider.usbConnected ? "USB Storage" : "Not Selected"}',
+              style: TextStyle(color: Colors.white70),
             ),
-            SizedBox(height: 10),
-            Text('📁 USB Path: $path'),
-            SizedBox(height: 10),
-            Text('📸 Save Location: $cleanSnapshotPath'),
-            SizedBox(height: 10),
-            provider.usbConnected
-                ? Text(
-                    '✅ USB storage connected and ready',
-                    style: TextStyle(
-                      color: Colors.green,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  )
-                : Text(
-                    '⚠ Please select USB storage to save photos',
-                    style: TextStyle(
-                      color: Colors.orange,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
+            const SizedBox(height: 10),
+            Text(
+              '📁 USB Path: ${provider.usbPath ?? "Not selected"}',
+              style: TextStyle(color: Colors.white70),
+            ),
           ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: Text('OK'),
+            child: Text('OK', style: TextStyle(color: _primaryAccent)),
           ),
           TextButton(
             onPressed: () {
               Navigator.of(context).pop();
-              provider.selectUSBDirectory();
+              _selectUSBAndStartCamera(provider);
             },
-            child: Text('Select USB'),
+            child: Text('Select USB', style: TextStyle(color: _primaryAccent)),
           ),
         ],
       ),
     );
-  }
-
-  void _showAssessmentResults(BuildContext context, String filePath) {
-    // Keep your existing _showAssessmentResults method, just update the context usage
-    // ... (your existing _showAssessmentResults code)
-  }
-
-  void _openFileLocation(BuildContext context, String filePath) {
-    // Keep your existing _openFileLocation method, just update the context usage
-    // ... (your existing _openFileLocation code)
   }
 
   @override

@@ -19,10 +19,10 @@ class _DraggableGridScreenState extends State<DraggableGridScreen> {
 
   // Surgery-related YouTube videos
   final List<String> youtubeUrls = [
-    "http://192.168.0.146:9081",
-    "http://192.168.0.146:9082",
-    "http://192.168.0.146:9083",
-    "http://192.168.0.146:9083",
+    "http://192.168.1.131:9081",
+    "http://192.168.1.131:9082",
+    "http://192.168.1.131:9083",
+    "http://192.168.1.131:9084",
   ];
 
   // Web controllers

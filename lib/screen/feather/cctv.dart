@@ -18,6 +18,9 @@ import 'package:fluttertoast/fluttertoast.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_screen_recording/flutter_screen_recording.dart';
+// video_switcher_screen.dart (FIXED: Stream selection indicator)
+
+// ... (Existing Imports)
 
 class VideoSwitcherScreen extends StatefulWidget {
   const VideoSwitcherScreen({super.key});
@@ -27,6 +30,7 @@ class VideoSwitcherScreen extends StatefulWidget {
 }
 
 class _VideoSwitcherScreenState extends State<VideoSwitcherScreen> {
+  // ... (Existing variables)
   int selectedVideoIndex = 0;
   final String baseUrl = 'http://192.168.0.43:5000';
   bool isRecording = false;
@@ -43,7 +47,7 @@ class _VideoSwitcherScreenState extends State<VideoSwitcherScreen> {
   late WebViewController _motionEyeController;
   late WebViewController _motionEyeControllerr;
   late WebViewController _motionEyeControllerrr;
-  int _selectedStreamIndex = 0;
+  int _selectedStreamIndex = 0; // The index of the currently playing stream
 
   // Message variables
   final TextEditingController _messageController = TextEditingController();
@@ -56,11 +60,11 @@ class _VideoSwitcherScreenState extends State<VideoSwitcherScreen> {
     {
       'name': 'CCTV 1',
       'controller': null, // Will be set in initState
-      'url': 'http://192.168.0.146:9081',
+      'url': 'http://192.168.1.131:9084',
     },
-    {'name': 'CCTV 2', 'controller': null, 'url': 'http://192.168.0.146:9082'},
-    {'name': 'CCTV 3', 'controller': null, 'url': 'http://192.168.0.146:9083'},
-    {'name': 'CCTV 4', 'controller': null, 'url': 'http://192.168.0.146:9083'},
+    {'name': 'CCTV 2', 'controller': null, 'url': 'http://192.168.1.131:9081'},
+    {'name': 'CCTV 3', 'controller': null, 'url': 'http://192.168.1.131:9082'},
+    {'name': 'CCTV 4', 'controller': null, 'url': 'http://192.168.1.131:9083'},
   ];
 
   @override
@@ -95,6 +99,7 @@ class _VideoSwitcherScreenState extends State<VideoSwitcherScreen> {
     _loadUSBPath();
   }
 
+  // ... (Existing helper functions: checkConnection, _showRecordingSelectionDialog, _startCCTVRecording)
   Future<void> checkConnection() async {
     try {
       final response = await http
@@ -126,33 +131,170 @@ class _VideoSwitcherScreenState extends State<VideoSwitcherScreen> {
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text("Select CCTV to Record"),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: ListView.builder(
-            shrinkWrap: true,
-            itemCount: cctvList.length,
-            itemBuilder: (context, index) {
-              final cctv = cctvList[index];
-              return ListTile(
-                leading: Icon(Icons.videocam, color: Colors.blue),
-                title: Text(cctv['name']),
-                subtitle: Text("Tap to start recording"),
-                onTap: () {
-                  Navigator.pop(context); // Close dialog
-                  _startCCTVRecording(cctv);
-                },
-              );
-            },
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            // Glass morphism effect
+            color: Colors.white.withOpacity(0.15),
+            border: Border.all(color: Colors.white.withOpacity(0.2), width: 1),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: BackdropFilter(
+              filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+              child: Container(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Header
+                    Row(
+                      children: [
+                        Container(
+                          width: 36,
+                          height: 36,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.2),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            Icons.video_camera_front_rounded,
+                            color: Colors.white,
+                            size: 20,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Text(
+                          "Select CCTV to Record",
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 16),
+                    Divider(height: 1, color: Colors.white.withOpacity(0.3)),
+                    const SizedBox(height: 16),
+
+                    // Content
+                    Text(
+                      "Choose a camera to start recording",
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.white.withOpacity(0.8),
+                      ),
+                    ),
+
+                    const SizedBox(height: 16),
+
+                    // CCTV List
+                    Container(
+                      constraints: BoxConstraints(
+                        maxHeight: MediaQuery.of(context).size.height * 0.4,
+                      ),
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: cctvList.length,
+                        itemBuilder: (context, index) {
+                          final cctv = cctvList[index];
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: Colors.white.withOpacity(0.2),
+                              ),
+                            ),
+                            child: ListTile(
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 8,
+                              ),
+                              leading: Container(
+                                width: 40,
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.2),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(
+                                  Icons.videocam,
+                                  color: Colors.white,
+                                  size: 20,
+                                ),
+                              ),
+                              title: Text(
+                                cctv['name'],
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w500,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              subtitle: Text(
+                                "Tap to start recording",
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.white.withOpacity(0.7),
+                                ),
+                              ),
+                              trailing: Icon(
+                                Icons.chevron_right_rounded,
+                                color: Colors.white.withOpacity(0.6),
+                              ),
+                              onTap: () {
+                                Navigator.pop(context);
+                                _startCCTVRecording(cctv);
+                              },
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+
+                    const SizedBox(height: 16),
+
+                    // Actions
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        Container(
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: TextButton(
+                            style: TextButton.styleFrom(
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 20,
+                                vertical: 8,
+                              ),
+                            ),
+                            onPressed: () => Navigator.pop(context),
+                            child: Text(
+                              "CANCEL",
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.9),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text("Cancel"),
-          ),
-        ],
       ),
     );
   }
@@ -573,7 +715,7 @@ class _VideoSwitcherScreenState extends State<VideoSwitcherScreen> {
     return Scaffold(
       body: Row(
         children: [
-          // Left Panel
+          // Left Panel (OR Camera List)
           Expanded(
             flex: 1,
             child: Container(
@@ -623,10 +765,11 @@ class _VideoSwitcherScreenState extends State<VideoSwitcherScreen> {
                                 horizontal: 12,
                               ),
                               children: [
-                                buildTvItem("C arm", 0),
-                                buildTvItem("Scopes", 1),
-                                buildTvItem("OT Light Camera", 2),
-                                buildTvItem("Navigation system", 3),
+                                // CHANGED: Using the new buildStreamItem
+                                _buildStreamItem("C arm", 0),
+                                _buildStreamItem("Scopes", 1),
+                                _buildStreamItem("OT Light Camera", 2),
+                                _buildStreamItem("Navigation system", 3),
                               ],
                             ),
                           ),
@@ -662,7 +805,7 @@ class _VideoSwitcherScreenState extends State<VideoSwitcherScreen> {
             ),
           ),
 
-          // Center Panel
+          // Center Panel (Main Stream View)
           Expanded(
             flex: 3,
             child: Container(
@@ -709,16 +852,16 @@ class _VideoSwitcherScreenState extends State<VideoSwitcherScreen> {
                           spacing: 8,
                           runSpacing: 8,
                           children: [
-                            buildControlBtn(
-                              "Start Recording",
-                              onPressed: startRecording,
-                              icon: Icons.play_arrow,
-                            ),
-                            buildControlBtn(
-                              "Stop Recording",
-                              onPressed: stopRecording,
-                              icon: Icons.stop,
-                            ),
+                            // buildControlBtn(
+                            //   "Start Recording",
+                            //   onPressed: startRecording,
+                            //   icon: Icons.play_arrow,
+                            // ),
+                            // buildControlBtn(
+                            //   "Stop Recording",
+                            //   onPressed: stopRecording,
+                            //   icon: Icons.stop,
+                            // ),
                             // CHANGED: Now shows CCTV selection dialog
                             buildControlBtn(
                               "Record CCTV",
@@ -726,10 +869,20 @@ class _VideoSwitcherScreenState extends State<VideoSwitcherScreen> {
                               icon: Icons.videocam,
                             ),
                             buildControlBtn(
-                              "Send Message",
-                              onPressed: _showMessageDialog,
-                              icon: Icons.message,
+                              "Take Screenshot",
+                              icon: Icons.camera_alt,
+                              onPressed: _takeScreenshot,
                             ),
+                            buildControlBtn(
+                              "USB Storage",
+                              icon: Icons.usb,
+                              onPressed: _selectUSBDirectory,
+                            ),
+                            // buildControlBtn(
+                            //   "Send Message",
+                            //   onPressed: _showMessageDialog,
+                            //   icon: Icons.message,
+                            // ),
                           ],
                         ),
                         const SizedBox(height: 8),
@@ -738,30 +891,30 @@ class _VideoSwitcherScreenState extends State<VideoSwitcherScreen> {
                           spacing: 8,
                           runSpacing: 8,
                           children: [
-                            buildControlBtn(
-                              "Take Screenshot",
-                              icon: Icons.camera_alt,
-                              onPressed: _takeScreenshot,
-                            ),
-                            buildControlBtn(
-                              "View Recordings",
-                              icon: Icons.video_library,
-                              onPressed: _viewRecordings,
-                            ),
-                            buildControlBtn(
-                              "USB Storage",
-                              icon: Icons.usb,
-                              onPressed: _selectUSBDirectory,
-                            ),
-                            buildControlBtn(
-                              "Share",
-                              icon: Icons.share,
-                              onPressed: () {
-                                Share.share(
-                                  'Invite to Wiespl Meet: https://wiespl.com/',
-                                );
-                              },
-                            ),
+                            // buildControlBtn(
+                            //   "Take Screenshot",
+                            //   icon: Icons.camera_alt,
+                            //   onPressed: _takeScreenshot,
+                            // ),
+                            // buildControlBtn(
+                            //   "View Recordings",
+                            //   icon: Icons.video_library,
+                            //   onPressed: _viewRecordings,
+                            // ),
+                            // buildControlBtn(
+                            //   "USB Storage",
+                            //   icon: Icons.usb,
+                            //   onPressed: _selectUSBDirectory,
+                            // ),
+                            // buildControlBtn(
+                            //   "Share",
+                            //   icon: Icons.share,
+                            //   onPressed: () {
+                            //     Share.share(
+                            //       'Invite to Wiespl Meet: https://wiespl.com/',
+                            //     );
+                            //   },
+                            // ),
                           ],
                         ),
                       ],
@@ -772,7 +925,7 @@ class _VideoSwitcherScreenState extends State<VideoSwitcherScreen> {
             ),
           ),
 
-          // Right Panel
+          // Right Panel (TV List)
           Expanded(
             flex: 1,
             child: Container(
@@ -813,6 +966,7 @@ class _VideoSwitcherScreenState extends State<VideoSwitcherScreen> {
                               builder: (context) => DraggableGridScreen(),
                             ),
                           ),
+                          // Retained existing buildTvItemm for the right panel list
                           child: buildTvItemm("Screen 1", 0),
                         ),
                         buildTvItemm("Screen 2", 1),
@@ -834,6 +988,7 @@ class _VideoSwitcherScreenState extends State<VideoSwitcherScreen> {
     VoidCallback? onPressed,
     Color? color,
   }) {
+    // ... (Existing implementation)
     return SizedBox(
       width: 140,
       child: ElevatedButton.icon(
@@ -858,20 +1013,44 @@ class _VideoSwitcherScreenState extends State<VideoSwitcherScreen> {
     );
   }
 
-  Widget buildTvItem(String name, int index) {
+  // MODIFIED FUNCTION: Renamed and added the blinking dot logic
+  Widget _buildStreamItem(String name, int index) {
+    final isSelected = _selectedStreamIndex == index;
+
     return InkWell(
       onTap: () => setState(() => _selectedStreamIndex = index),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Row(
+            children: [
+              SizedBox(height: 40),
+              Text(
+                name,
+                style: TextStyle(
+                  color: isSelected
+                      ? Colors.lightGreenAccent
+                      : Colors.white, // Highlight selected text
+                  fontWeight: FontWeight.bold,
+                  fontSize: 30,
+                ),
+              ),
+              const SizedBox(width: 8),
+              // // NEW: Green dot indicator
+              // Visibility(
+              //   visible: isSelected,
+              //   child: _BlinkingDot(), // Use the Blinking Dot widget
+              // ),
+            ],
+          ),
+
           Text(
-            name,
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
+            isSelected ? "LIVE" : "Select to view",
+            style: TextStyle(
+              color: isSelected ? Colors.greenAccent : Colors.white70,
+              fontSize: 28,
             ),
           ),
-          Text("Playing $name", style: const TextStyle(color: Colors.white70)),
           const Divider(color: Colors.white38),
         ],
       ),
@@ -879,6 +1058,7 @@ class _VideoSwitcherScreenState extends State<VideoSwitcherScreen> {
   }
 
   Widget buildTvItemm(String name, int index) {
+    // This function remains the same as it's for the 'TV List' on the right
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -887,11 +1067,64 @@ class _VideoSwitcherScreenState extends State<VideoSwitcherScreen> {
           style: const TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.bold,
+            fontSize: 30,
           ),
         ),
-        Text("Playing $name", style: const TextStyle(color: Colors.white70)),
+        // Text("Playing $name", style: const TextStyle(color: Colors.white70)),
         const Divider(color: Colors.white38),
       ],
+    );
+  }
+}
+
+/// NEW STATEFUL WIDGET FOR BLINKING EFFECT
+class _BlinkingDot extends StatefulWidget {
+  @override
+  __BlinkingDotState createState() => __BlinkingDotState();
+}
+
+class __BlinkingDotState extends State<_BlinkingDot>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  bool _isVisible = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 500),
+      vsync: this,
+    )..repeat(reverse: true);
+
+    _controller.addListener(() {
+      if (mounted) {
+        // Simple blinking logic based on animation value
+        setState(() {
+          _isVisible = _controller.value > 0.5;
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedOpacity(
+      opacity: _isVisible ? 1.0 : 0.0,
+      duration: const Duration(milliseconds: 200),
+      child: Container(
+        width: 10,
+        height: 10,
+        decoration: const BoxDecoration(
+          color: Colors.greenAccent,
+          shape: BoxShape.circle,
+        ),
+      ),
     );
   }
 }

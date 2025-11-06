@@ -49,9 +49,16 @@ class StylishStopwatchPage extends StatelessWidget {
         elevation: 0,
         title: const Text(
           "Stopwatch",
-          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+            fontSize: 28,
+          ),
         ),
         centerTitle: true,
+        iconTheme: const IconThemeData(
+          color: Colors.white, // 👈 makes the back button white
+        ),
       ),
       body: Container(
         width: double.infinity,
@@ -114,7 +121,11 @@ class StylishStopwatchPage extends StatelessWidget {
             const SizedBox(height: 30),
             const Text(
               "Lap Times",
-              style: TextStyle(fontWeight: FontWeight.bold),
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 22,
+                color: Colors.white,
+              ),
             ),
             Expanded(
               child: ListView.builder(
@@ -123,8 +134,12 @@ class StylishStopwatchPage extends StatelessWidget {
                   return ListTile(
                     leading: Text(
                       "#${stopwatchProvider.lapTimes.length - index}",
+                      style: TextStyle(color: Colors.white70),
                     ),
-                    title: Text(stopwatchProvider.lapTimes[index]),
+                    title: Text(
+                      stopwatchProvider.lapTimes[index],
+                      style: TextStyle(color: Colors.white70),
+                    ),
                   );
                 },
               ),

@@ -55,6 +55,8 @@ dependencies:
   slide_digital_clock: ^1.0.3
   gif_view: ^0.3.1
   chewie: ^1.13.0
+  file_saver: ^0.3.1
+  open_filex: ^4.7.0
 
 dev_dependencies:
   flutter_test:
@@ -88,3 +90,11 @@ flutter:
     - assets/audio/NormalAir.mp3
     - assets/image.png
     - assets/marcel-scholte-LPurJnihmQI-unsplash.jpg
+    - assets/irwan-rbDE93-0hHs-unsplash.jpg
+    - assets/music/Gayatri Mantra_128-(PagalWorld.Org.Im).mp3
+    - assets/music/He Ram He Ram-320kbps.mp3
+    - assets/music/Mahamrityunjay Mantra महमतयजय मतर Om Trayambakam Yajamahe.mp3
+    - assets/music/Shiv Namaskarartha Mantra  Monday Special  LoFi Version.mp3
+    - assets/music/Sri Venkatesha Stotram - Invoking the Lord's Mercy _ New Year 2025.mp3
+    - assets/music/Sri Venkateshwara Suprabhatham-320kbps.mp3
+    - assets/music/शर हनमन चलस  Shree Hanuman Chalisa Original Video  GULSHAN KUMAR  HARIHARAN Full HD.mp3

@@ -44,16 +44,25 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
     'temp',
     'rh',
     'lighting',
-    'dicom',
+    'mgps',
     'Stop Watch',
     'music',
     'cctv',
-    'mgps',
+    'dicom',
     'pis',
     'store',
     'clean',
     'phone',
   ];
+  // Send system status command to USB using GlobalUsbProvider
+  void _sendSystemStatusCommand(bool isOn) {
+    final usbProvider = Provider.of<GlobalUsbProvider>(context, listen: false);
+
+    // Use the provider's method instead of direct USB communication
+    usbProvider.toggleSystemPower(isOn);
+
+    _showSuccessSnackbar("System turned ${isOn ? 'ON' : 'OFF'}");
+  }
 
   // USB related variables
   UsbPort? _port;
@@ -61,7 +70,7 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
   StreamSubscription<dynamic>? _usbSubscription;
 
   static const platform = MethodChannel('app_launcher_channel');
-
+  static const Color _neonColor = Color(0xFF65D6F2);
   // Timer for periodic updates
   Timer? _updateTimer;
 
@@ -80,7 +89,14 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
-
+    // Initialize USB when screen loads (SharedPreferences is already initialized in main.dart)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final usbProvider = Provider.of<GlobalUsbProvider>(
+        context,
+        listen: false,
+      );
+      usbProvider.initUsb(); // Only initialize USB connection
+    });
     // Initialize particles
     for (int i = 0; i < 18; i++) {
       _particles.add(MedicalParticle(_random));
@@ -172,7 +188,10 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
   }
 
   void _toggleMute() {
-    final audioProvider = Provider.of<AudioProvider>(context, listen: false);
+    final audioProvider = Provider.of<GlobalUsbProvider>(
+      context,
+      listen: false,
+    );
     audioProvider.toggleMute();
     _showSuccessSnackbar(
       audioProvider.isMuted ? "Audio muted" : "Audio unmuted",
@@ -315,50 +334,6 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
     usbProvider.reconnectUsb();
   }
 
-  // Send system status command to USB
-  void _sendSystemStatusCommand(bool isOn) {
-    final usbProvider = Provider.of<GlobalUsbProvider>(context, listen: false);
-
-    if (_port != null && usbProvider.isConnected) {
-      List<String> pairs = [];
-      pairs.add('SR_WSL:200001');
-      pairs.add('C_PRESSURE_1:000');
-      pairs.add('C_PRESSURE_1_SIGN_BIT:1');
-      pairs.add('C_PRESSURE_2:000');
-      pairs.add('C_PRESSURE_2_SIGN_BIT:1');
-      pairs.add('C_OT_TEMP:250');
-      pairs.add('C_RH:500');
-
-      // Add all parameters
-      for (int i = 1; i <= 10; i++) {
-        String fault = '0'; // Default no fault
-        pairs.add('F_Sensor_${i}_FAULT_BIT:$fault');
-        pairs.add('S_Sensor_${i}_NO_NC_SETTING:1');
-
-        if (i == 10) {
-          pairs.add('S_Light_${i}_ON_OFF:${isOn ? '1' : '0'}');
-        } else {
-          pairs.add('S_Light_${i}_ON_OFF:0');
-        }
-        pairs.add(
-          'S_Light_${i}_Intensity:${i == 10 ? (isOn ? '100' : '000') : '000'}',
-        );
-      }
-
-      pairs.add('S_IOT_TIMER:0060');
-      pairs.add('S_TEMP_SETPT:250');
-      pairs.add('S_RH_SETPT:500');
-
-      String command = '{${pairs.join(',')}}';
-      _port!.write(Uint8List.fromList((command + "\n").codeUnits));
-
-      debugPrint("Sent system status command: $command");
-      _showSuccessSnackbar("System turned ${isOn ? 'ON' : 'OFF'}");
-    } else {
-      _showErrorSnackbar("USB is not connected");
-    }
-  }
-
   Future<void> _launchDroidRenderAndEnterPip() async {
     try {
       final bool success = await platform.invokeMethod(
@@ -421,7 +396,7 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
         Get.to(() => LightIntensityPage(), transition: Transition.rightToLeft);
         break;
       case 4:
-        _launchDroidRenderAndEnterPip();
+        Get.to(() => GasStatusPage(), transition: Transition.rightToLeft);
         break;
       case 5:
         Get.to(
@@ -433,26 +408,28 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
         Get.to(() => MusicPlayerScreen(), transition: Transition.rightToLeft);
         break;
       case 7:
-        List<ConnectivityResult> results = await Connectivity()
-            .checkConnectivity();
-        if (results.contains(ConnectivityResult.none)) {
-          Get.snackbar(
-            "no_internet".tr,
-            "check_connection".tr,
-            snackPosition: SnackPosition.BOTTOM,
-          );
-        } else {
-          Get.to(() => VideoSwitcherScreen(), transition: Transition.fadeIn);
-        }
+        // List<ConnectivityResult> results = await Connectivity()
+        //     .checkConnectivity();
+        // if (results.contains(ConnectivityResult.none)) {
+        //   Get.snackbar(
+        //     "no_internet".tr,
+        //     "check_connection".tr,
+        //     snackPosition: SnackPosition.BOTTOM,
+        //   );
+        // } else {
+        //   Get.to(() => VideoSwitcherScreen(), transition: Transition.fadeIn);
+        // }
+        Get.to(() => VideoSwitcherScreen(), transition: Transition.fadeIn);
         break;
       case 8:
-        Get.to(() => GasStatusPage(), transition: Transition.rightToLeft);
+        _launchDroidRenderAndEnterPip();
+        // Get.to(() => GasStatusPage(), transition: Transition.rightToLeft);
         break;
       case 9:
-        Get.to(() => DashboardScreen(), transition: Transition.rightToLeft);
+        Get.to(() => PatientListScreen(), transition: Transition.rightToLeft);
         break;
       case 10:
-        Get.to(() => HospitalStoreScreen(), transition: Transition.rightToLeft);
+        Get.to(() => HospitalApp(), transition: Transition.rightToLeft);
         break;
       case 11:
         Get.to(
@@ -461,7 +438,7 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
         );
         break;
       case 12:
-        Get.to(() => RelayControlApp(), transition: Transition.rightToLeft);
+        Get.to(() => DialerScreen(), transition: Transition.rightToLeft);
         break;
     }
   }
@@ -516,7 +493,7 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
             textAlign: TextAlign.center,
             style: const TextStyle(
               color: Colors.white,
-              fontSize: 26,
+              fontSize: 30,
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -527,7 +504,7 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
                 currentValue,
                 style: const TextStyle(
                   color: Colors.white,
-                  fontSize: 24,
+                  fontSize: 27,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -707,7 +684,7 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     final usbProvider = Provider.of<GlobalUsbProvider>(context);
-    final audioProvider = Provider.of<AudioProvider>(context);
+    final audioProvider = Provider.of<GlobalUsbProvider>(context);
     return Scaffold(
       body: Stack(
         children: [
@@ -735,42 +712,10 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                         children: [
-                          Padding(
-                            padding: const EdgeInsets.only(left: 20, bottom: 5),
-                            child: Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: Colors.black,
-                                  width: 2,
-                                ),
-                              ),
-                              height: 100,
-                              width: 100,
-                              child: AnalogClock(
-                                decoration: const BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: Colors.transparent,
-                                ),
-                                width: 60,
-                                height: 60,
-                                isLive: true,
-                                hourHandColor: Colors.black,
-                                minuteHandColor: Colors.black,
-                                secondHandColor: Colors.red,
-                                showSecondHand: true,
-                                showNumbers: true,
-                                showTicks: true,
-                                datetime: DateTime.now(),
-                                textScaleFactor: 1.1,
-                              ),
-                            ),
-                          ),
+                          ClockDisplay(neonColor: _neonColor),
                           const SizedBox(),
                           Text(
-                            "welcome Healing Hands Clinic",
+                            "WELCOME TO WIESPL CONTROL PANEL",
                             style: TextStyle(
                               color: Colors.white,
                               fontSize: 24,
@@ -954,48 +899,59 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
                         ],
                       ),
                       const Spacer(),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 8,
-                        ),
-                        decoration: BoxDecoration(
-                          color: usbProvider.isHepaHealthy
-                              ? Colors.green.withOpacity(0.2)
-                              : Colors.red.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                            color: usbProvider.isHepaHealthy
-                                ? Colors.green
-                                : Colors.red,
-                            width: 2,
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              usbProvider.isHepaHealthy
-                                  ? Icons.air
-                                  : Icons.warning,
-                              color: usbProvider.isHepaHealthy
-                                  ? Colors.green
-                                  : Colors.red,
-                              size: 20,
+                      Column(
+                        children: [
+                          Text(
+                            "system_status".tr,
+                            style: const TextStyle(
+                              color: Colors.transparent,
+                              fontWeight: FontWeight.bold,
                             ),
-                            const SizedBox(width: 8),
-                            Text(
-                              usbProvider.hepaStatusText,
-                              style: TextStyle(
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: usbProvider.isHepaHealthy
+                                  ? Colors.green.withOpacity(0.2)
+                                  : Colors.red.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
                                 color: usbProvider.isHepaHealthy
                                     ? Colors.green
                                     : Colors.red,
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
+                                width: 2,
                               ),
                             ),
-                          ],
-                        ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  usbProvider.isHepaHealthy
+                                      ? Icons.air
+                                      : Icons.warning,
+                                  color: usbProvider.isHepaHealthy
+                                      ? Colors.green
+                                      : Colors.red,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  usbProvider.hepaStatusText,
+                                  style: TextStyle(
+                                    color: usbProvider.isHepaHealthy
+                                        ? Colors.green
+                                        : Colors.red,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.end,
@@ -1009,73 +965,141 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
                           ),
                           Consumer<GlobalUsbProvider>(
                             builder: (context, usbProvider, child) {
-                              return Switch(
-                                value: usbProvider.isSwitched,
-                                activeColor: Colors.lightBlueAccent,
-                                inactiveThumbColor: Colors.grey.shade300,
-                                inactiveTrackColor: Colors.grey.shade500,
-                                onChanged: (value) async {
-                                  if (!value) {
-                                    bool confirm = await showDialog(
-                                      context: context,
-                                      builder: (context) => AlertDialog(
-                                        title: const Text("Confirm"),
-                                        content: const Text(
-                                          "Are you sure you want to turn off the system?",
-                                        ),
-                                        actions: [
-                                          TextButton(
-                                            onPressed: () => Navigator.of(
-                                              context,
-                                            ).pop(false),
-                                            child: const Text("Cancel"),
-                                          ),
-                                          TextButton(
-                                            onPressed: () =>
-                                                Navigator.of(context).pop(true),
-                                            child: const Text("Yes"),
-                                          ),
-                                        ],
+                              bool isSwitching =
+                                  false; // You'll need to add this to your provider
+
+                              return Stack(
+                                alignment: Alignment.center,
+                                children: [
+                                  Switch(
+                                    value: usbProvider.isSwitched,
+                                    activeColor: Colors.lightBlueAccent,
+                                    inactiveThumbColor: Colors.grey.shade300,
+                                    inactiveTrackColor: Colors.grey.shade500,
+                                    onChanged: isSwitching
+                                        ? null
+                                        : (value) async {
+                                            // Disable during operation
+                                            if (!value) {
+                                              bool confirm = await showDialog(
+                                                context: context,
+                                                builder: (context) => AlertDialog(
+                                                  title: const Text("Confirm"),
+                                                  content: const Text(
+                                                    "Are you sure you want to turn off the system?",
+                                                  ),
+                                                  actions: [
+                                                    TextButton(
+                                                      onPressed: () =>
+                                                          Navigator.of(
+                                                            context,
+                                                          ).pop(false),
+                                                      child: const Text(
+                                                        "Cancel",
+                                                      ),
+                                                    ),
+                                                    TextButton(
+                                                      onPressed: () =>
+                                                          Navigator.of(
+                                                            context,
+                                                          ).pop(true),
+                                                      child: const Text("Yes"),
+                                                    ),
+                                                  ],
+                                                ),
+                                              );
+                                              if (!confirm) return;
+                                            }
+
+                                            // Show loading state
+                                            // usbProvider.setSwitching(true); // Add this method to provider
+
+                                            try {
+                                              _sendSystemStatusCommand(value);
+                                              // Success handled in provider
+                                            } catch (e) {
+                                              // Show error message
+                                              ScaffoldMessenger.of(
+                                                context,
+                                              ).showSnackBar(
+                                                SnackBar(
+                                                  content: Text(
+                                                    "Failed to ${value ? 'start' : 'stop'} system",
+                                                  ),
+                                                  backgroundColor: Colors.red,
+                                                ),
+                                              );
+                                              // Revert UI state on error
+                                              // usbProvider.updateSystemStatus(!value);
+                                            } finally {
+                                              // usbProvider.setSwitching(false);
+                                            }
+                                          },
+                                  ),
+
+                                  // Loading indicator overlay
+                                  if (isSwitching)
+                                    Container(
+                                      width: 48,
+                                      height: 48,
+                                      decoration: BoxDecoration(
+                                        color: Colors.black54,
+                                        borderRadius: BorderRadius.circular(24),
                                       ),
-                                    );
-                                    if (!confirm) return;
-                                  }
-                                  _sendSystemStatusCommand(value);
-                                  usbProvider.updateSystemStatus(value);
-                                },
+                                      child: const CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        valueColor:
+                                            AlwaysStoppedAnimation<Color>(
+                                              Colors.white,
+                                            ),
+                                      ),
+                                    ),
+                                ],
                               );
                             },
                           ),
                         ],
                       ),
-                      IconButton(
-                        icon: Icon(
-                          audioProvider.isMuted
-                              ? Icons.volume_off
-                              : Icons.volume_up,
-                          size: 42,
-                          color: Colors.white,
-                        ),
-                        onPressed: _toggleMute,
-                        tooltip: audioProvider.isMuted ? "Unmute" : "Mute",
+                      Column(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          Text(
+                            "system_status".tr,
+                            style: const TextStyle(
+                              color: Colors.transparent,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          IconButton(
+                            icon: Icon(
+                              audioProvider.isMuted
+                                  ? Icons.volume_off
+                                  : Icons.volume_up,
+                              size: 42,
+                              color: Colors.white,
+                            ),
+                            onPressed: _toggleMute,
+                            tooltip: audioProvider.isMuted ? "Unmute" : "Mute",
+                          ),
+                        ],
                       ),
                       const SizedBox(width: 12),
-                      IconButton(
-                        icon: const Icon(
-                          Icons.refresh,
-                          size: 42,
-                          color: Colors.white,
-                        ),
-                        onPressed: () {
-                          _reconnectUsb();
-                          usbProvider.refreshHepaStatus();
-                          Get.snackbar(
-                            "refreshing".tr,
-                            "",
-                            snackPosition: SnackPosition.BOTTOM,
-                          );
-                        },
-                      ),
+                      // IconButton(
+                      //   icon: const Icon(
+                      //     Icons.refresh,
+                      //     size: 42,
+                      //     color: Colors.white,
+                      //   ),
+                      //   onPressed: () {
+                      //     _reconnectUsb();
+                      //     usbProvider.refreshHepaStatus();
+                      //     Get.snackbar(
+                      //       "refreshing".tr,
+                      //       "",
+                      //       snackPosition: SnackPosition.BOTTOM,
+                      //     );
+                      //   },
+                      // ),
                     ],
                   ),
                 ),

@@ -2,7 +2,6 @@
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as path;
@@ -184,8 +183,6 @@ class RoomCleanlinessProvider with ChangeNotifier {
 
       final XFile photo = await _cameraController!.takePicture();
 
-      await _stopCameraPreview();
-
       String timestamp = DateTime.now().millisecondsSinceEpoch.toString();
       String fileName = 'Room_Cleanliness_$timestamp.jpg';
       String newPath = path.join(_cleanSnapshotPath, fileName);
@@ -206,6 +203,54 @@ class RoomCleanlinessProvider with ChangeNotifier {
       print("❌ Error taking photo: $e");
       _isTakingPhoto = false;
       notifyListeners();
+    }
+  }
+  // Add this method to your RoomCleanlinessProvider class
+
+  Future<void> takePhotoWithCustomName(String fileName) async {
+    if (!_isCameraInitialized ||
+        _cameraController == null ||
+        _isTakingPhoto ||
+        !_cameraController!.value.isInitialized ||
+        _isDisposing) {
+      return;
+    }
+
+    if (!_usbConnected || _usbPath == null) {
+      Fluttertoast.showToast(
+        msg: "Please select USB storage first",
+        gravity: ToastGravity.BOTTOM,
+      );
+      return;
+    }
+
+    _isTakingPhoto = true;
+    notifyListeners();
+
+    try {
+      await Future.delayed(Duration(milliseconds: 100));
+
+      final XFile photo = await _cameraController!.takePicture();
+
+      String newPath = path.join(_cleanSnapshotPath, fileName);
+
+      await File(photo.path).copy(newPath);
+
+      try {
+        await File(photo.path).delete();
+      } catch (e) {
+        print('⚠ Could not delete temp file: ${photo.path}');
+      }
+
+      _capturedImage = XFile(newPath);
+      _showCameraPreview = false;
+      _isTakingPhoto = false;
+      notifyListeners();
+    } catch (e) {
+      print("❌ Error taking photo: $e");
+      _isTakingPhoto = false;
+      notifyListeners();
+      rethrow;
     }
   }
 
@@ -253,11 +298,11 @@ class RoomCleanlinessProvider with ChangeNotifier {
   }
 
   Future<void> _startCameraPreview() async {
-    if (_cameraController != null &&
-        _cameraController!.value.isInitialized &&
-        !_cameraController!.value.isPreviewPaused) {
+    if (_cameraController != null && _cameraController!.value.isInitialized) {
       try {
-        await _cameraController!.resumePreview();
+        if (_cameraController!.value.isPreviewPaused) {
+          await _cameraController!.resumePreview();
+        }
       } catch (e) {
         print("Error resuming camera preview: $e");
       }
@@ -275,6 +320,10 @@ class RoomCleanlinessProvider with ChangeNotifier {
 
     _showCameraPreview = true;
     _capturedImage = null;
+
+    // Ensure preview is started
+    await _startCameraPreview();
+
     notifyListeners();
   }
 
@@ -283,6 +332,8 @@ class RoomCleanlinessProvider with ChangeNotifier {
     _showCameraPreview = true;
     notifyListeners();
 
+    // Add a small delay to ensure UI updates before starting preview
+    await Future.delayed(Duration(milliseconds: 100));
     await _startCameraPreview();
   }
 

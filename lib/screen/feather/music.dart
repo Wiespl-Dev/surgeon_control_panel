@@ -14,29 +14,43 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
 
   final List<Map<String, String>> _songs = [
     {
-      'title': 'Ocean Breeze',
-      'artist': 'Artist A',
-      'url': 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
+      'title': 'Gayatri Mantra',
+      'artist': '',
+      'url': 'assets/music/Gayatri Mantra_128-(PagalWorld.Org.Im).mp3',
     },
     {
-      'title': 'Sunset Harmony',
-      'artist': 'Artist B',
-      'url': 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3',
+      'title': 'He Ram He Ram',
+      'artist': '',
+      'url': 'assets/music/He Ram He Ram-320kbps.mp3',
     },
     {
-      'title': 'Tranquil Echoes',
-      'artist': 'Artist C',
-      'url': 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3',
+      'title': 'Mahamrityunjay Mantra',
+      'artist': '',
+      'url':
+          'assets/music/Mahamrityunjay Mantra महमतयजय मतर Om Trayambakam Yajamahe.mp3',
     },
     {
-      'title': 'Mystic Waves',
-      'artist': 'Artist D',
-      'url': 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3',
+      'title': 'Shiv Namaskarartha Mantra',
+      'artist': '',
+      'url':
+          'assets/music/Shiv Namaskarartha Mantra  Monday Special  LoFi Version.mp3',
     },
     {
-      'title': 'Blissful Beats',
-      'artist': 'Artist E',
-      'url': 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-5.mp3',
+      'title': 'Sri Venkatesha Stotram',
+      'artist': '',
+      'url':
+          'assets/music/Sri Venkatesha Stotram - Invoking the Lord\'s Mercy _ New Year 2025.mp3',
+    },
+    {
+      'title': 'Sri Venkateshwara Suprabhatham',
+      'artist': '',
+      'url': 'assets/music/Sri Venkateshwara Suprabhatham-320kbps.mp3',
+    },
+    {
+      'title': 'Shree Hanuman Chalisa',
+      'artist': '',
+      'url':
+          'assets/music/शर हनमन चलस  Shree Hanuman Chalisa Original Video  GULSHAN KUMAR  HARIHARAN Full HD.mp3',
     },
   ];
 
@@ -55,7 +69,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
 
   Future<void> _playSong(int index) async {
     try {
-      await _player.setUrl(_songs[index]['url']!);
+      await _player.setAsset(_songs[index]['url']!);
       _player.play();
       setState(() {
         _currentIndex = index;
@@ -112,7 +126,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
         backgroundColor: const Color(0xFF3D8A8F),
         elevation: 6,
         title: const Text(
-          'My Music',
+          'Spiritual Music',
           style: TextStyle(
             fontWeight: FontWeight.bold,
             fontSize: 22,
@@ -120,14 +134,15 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
           ),
         ),
         centerTitle: true,
+        iconTheme: const IconThemeData(
+          color: Colors.white, // 👈 makes the back button white
+        ),
       ),
       body: Container(
-        //  width: double.infinity,
         decoration: const BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            // backgroundColor: const Color(0xFF3D8A8F),
             colors: [Color(0xFF3D8A8F), Color(0xFF3D8A8F)],
           ),
         ),

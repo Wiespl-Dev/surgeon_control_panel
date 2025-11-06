@@ -4,7 +4,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:surgeon_control_panel/main.dart';
-import 'package:surgeon_control_panel/provider/or_status_provider.dart';
+import 'package:surgeon_control_panel/services/usb_service.dart';
 
 class ORStatusMonitor extends StatefulWidget {
   @override
@@ -31,10 +31,10 @@ class _ORStatusMonitorState extends State<ORStatusMonitor>
   void initState() {
     super.initState();
 
-    // Initialize provider
+    // Initialize provider - UPDATED to use GlobalUsbProvider
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final provider = Provider.of<ORStatusProvider>(context, listen: false);
-      provider.initPreferences().then((_) => provider.initUsb());
+      final provider = Provider.of<GlobalUsbProvider>(context, listen: false);
+      provider.initSharedPreferences().then((_) => provider.initUsb());
     });
 
     // particles
@@ -82,10 +82,7 @@ class _ORStatusMonitorState extends State<ORStatusMonitor>
     _pulseController.dispose();
     _dateTimeTimer.cancel();
 
-    // Cleanup USB
-    final provider = Provider.of<ORStatusProvider>(context, listen: false);
-    provider.disposeUsb();
-
+    // Cleanup USB - UPDATED: No need for separate disposeUsb as GlobalUsbProvider handles it in its own dispose
     super.dispose();
   }
 
@@ -131,8 +128,8 @@ class _ORStatusMonitorState extends State<ORStatusMonitor>
     return months[m - 1];
   }
 
-  // Method to format pressure value with color and proper decimal format
-  Widget _buildPressureValue(ORStatusProvider provider) {
+  // Method to format pressure value with color and proper decimal format - UPDATED
+  Widget _buildPressureValue(GlobalUsbProvider provider) {
     String displayValue;
     Color textColor;
 
@@ -158,7 +155,8 @@ class _ORStatusMonitorState extends State<ORStatusMonitor>
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<ORStatusProvider>(
+    return Consumer<GlobalUsbProvider>(
+      // UPDATED: Changed to GlobalUsbProvider
       builder: (context, provider, child) {
         return Scaffold(
           backgroundColor: const Color(0xFF3D8A8F),
@@ -189,30 +187,23 @@ class _ORStatusMonitorState extends State<ORStatusMonitor>
                             children: [
                               Center(
                                 child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(
-                                    20.0,
-                                  ), // Creates the glass shape
+                                  borderRadius: BorderRadius.circular(20.0),
                                   child: BackdropFilter(
-                                    // Applies the blur to the content *behind* this widget
                                     filter: ImageFilter.blur(
-                                      sigmaX: 10.0, // Horizontal blur intensity
-                                      sigmaY: 10.0, // Vertical blur intensity
+                                      sigmaX: 10.0,
+                                      sigmaY: 10.0,
                                     ),
                                     child: Container(
                                       height: 80,
                                       width: 200,
-                                      // Defines the look of the 'glass'
                                       decoration: BoxDecoration(
-                                        // Semi-transparent color is essential for the frosted look
                                         color: Colors.white.withOpacity(0.3),
                                         border: Border.all(
-                                          // Optional: A subtle border for a 'lit edge' effect
                                           color: Colors.white.withOpacity(0.2),
                                           width: 1.0,
                                         ),
                                       ),
                                       child: Center(
-                                        // Your image content
                                         child: Image.asset(
                                           'assets/image.png',
                                           height: 70,
@@ -223,34 +214,25 @@ class _ORStatusMonitorState extends State<ORStatusMonitor>
                                   ),
                                 ),
                               ),
-
-                              // 2. YOUR GLASS PANEL (The code block you provided)
                               Center(
                                 child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(
-                                    20.0,
-                                  ), // Creates the glass shape
+                                  borderRadius: BorderRadius.circular(20.0),
                                   child: BackdropFilter(
-                                    // Applies the blur to the content *behind* this widget
                                     filter: ImageFilter.blur(
-                                      sigmaX: 10.0, // Horizontal blur intensity
-                                      sigmaY: 10.0, // Vertical blur intensity
+                                      sigmaX: 10.0,
+                                      sigmaY: 10.0,
                                     ),
                                     child: Container(
                                       height: 70,
                                       width: 180,
-                                      // Defines the look of the 'glass'
                                       decoration: BoxDecoration(
-                                        // Semi-transparent color is essential for the frosted look
                                         color: Colors.white.withOpacity(0.3),
                                         border: Border.all(
-                                          // Optional: A subtle border for a 'lit edge' effect
                                           color: Colors.white.withOpacity(0.2),
                                           width: 1.0,
                                         ),
                                       ),
                                       child: Center(
-                                        // Your image content
                                         child: Image.asset(
                                           'assets/app_logo-removebg-preview.png',
                                           height: 70,
@@ -263,10 +245,6 @@ class _ORStatusMonitorState extends State<ORStatusMonitor>
                               ),
                             ],
                           ),
-                          // Image.asset(
-                          //   "assets/app_logo-removebg-preview.png",
-                          //   height: 70,
-                          // ),
                           Row(
                             children: [
                               // USB status indicator
@@ -281,7 +259,7 @@ class _ORStatusMonitorState extends State<ORStatusMonitor>
                                 ),
                               ),
                               const SizedBox(width: 8),
-                              // Refresh button for sensor data
+                              // Refresh button for sensor data - UPDATED method name
                               IconButton(
                                 onPressed: provider.requestSensorData,
                                 icon: const Icon(
@@ -331,19 +309,29 @@ class _ORStatusMonitorState extends State<ORStatusMonitor>
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                               children: [
-                                // Line 1: Temperature, R/H, and Room Pressure
+                                // Line 1: Temperature, R/H, and Room Pressure - UPDATED data sources
                                 _buildThreeItemRow(
                                   item1: _statusTile(
                                     title: "Temperature",
-                                    value: provider.temperature.toStringAsFixed(
-                                      1,
-                                    ),
+                                    value: provider.currentTemperature != "--"
+                                        ? double.tryParse(
+                                                provider.currentTemperature
+                                                    .replaceAll('°C', ''),
+                                              )?.toStringAsFixed(1) ??
+                                              "0.0"
+                                        : "0.0",
                                     unit: "°C",
                                     icon: Icons.thermostat_outlined,
                                   ),
                                   item2: _statusTile(
                                     title: "R/H",
-                                    value: provider.humidity.toStringAsFixed(1),
+                                    value: provider.currentHumidity != "--"
+                                        ? double.tryParse(
+                                                provider.currentHumidity
+                                                    .replaceAll('%', ''),
+                                              )?.toStringAsFixed(1) ??
+                                              "0.0"
+                                        : "0.0",
                                     unit: "%",
                                     icon: Icons.water_drop_outlined,
                                   ),
@@ -379,6 +367,7 @@ class _ORStatusMonitorState extends State<ORStatusMonitor>
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceAround,
                         children: [
+                          // UPDATED: Changed method calls to GlobalUsbProvider methods
                           _customToggle(
                             label: "Defumigation",
                             value: provider.defumigation,
@@ -387,15 +376,22 @@ class _ORStatusMonitorState extends State<ORStatusMonitor>
                           ),
                           _customToggle(
                             label: "System",
-                            value: provider.systemOn,
+                            value: provider
+                                .isSwitched, // UPDATED: Using isSwitched instead of systemOn
                             icon: Icons.power_settings_new,
-                            onChanged: provider.toggleSystem,
+                            onChanged: (value) {
+                              provider.toggleSystemPower(
+                                value,
+                              ); // UPDATED: Using toggleSystemPower
+                            },
                           ),
                           _customToggle(
                             label: "Night",
-                            value: provider.nightMode,
+                            value: provider
+                                .orNightMode, // UPDATED: Using orNightMode
                             icon: Icons.mode_night_outlined,
-                            onChanged: provider.toggleNightMode,
+                            onChanged: provider
+                                .toggleORNightMode, // UPDATED: Using toggleORNightMode
                           ),
                         ],
                       ),
@@ -410,14 +406,11 @@ class _ORStatusMonitorState extends State<ORStatusMonitor>
     );
   }
 
-  // ... (Keep all your existing UI helper methods: _buildThreeItemRow, _buildStatusRow,
-  // _statusTile, _pressureStatusTile, _customToggle, etc. They remain the same)
-  // Just update _pressureStatusTile to accept provider parameter:
-
+  // UPDATED: Changed parameter type to GlobalUsbProvider
   Widget _pressureStatusTile({
     required String title,
     required IconData icon,
-    required ORStatusProvider provider,
+    required GlobalUsbProvider provider,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -468,7 +461,6 @@ class _ORStatusMonitorState extends State<ORStatusMonitor>
     );
   }
 
-  // ... (Keep all other UI methods exactly as they were)
   Widget _buildThreeItemRow({
     required Widget item1,
     required Widget item2,
@@ -636,8 +628,7 @@ class _ORStatusMonitorState extends State<ORStatusMonitor>
   }
 }
 
-// ... (Keep all your existing helper classes: _AnimatedCounter, SimpleSeparatorPainter,
-// MedicalParticle, ClinicalBackgroundPainter exactly as they were)
+// Keep all your existing helper classes exactly as they were (they don't need changes)
 class _AnimatedCounter extends StatefulWidget {
   final String value;
   const _AnimatedCounter({Key? key, required this.value}) : super(key: key);
@@ -821,7 +812,7 @@ class ClinicalBackgroundPainter extends CustomPainter {
 
   void _drawECG(Canvas canvas, Size size, double phase) {
     final paint = Paint()
-      ..color = Colors.white.withOpacity(0.15)
+      ..color = Colors.transparent
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.4
       ..strokeCap = StrokeCap.round;

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:usb_serial/usb_serial.dart';
+import 'package:audioplayers/audioplayers.dart';
 import 'dart:async';
 import 'dart:typed_data';
 
@@ -24,7 +25,7 @@ class GlobalUsbProvider with ChangeNotifier {
   // Temperature State
   double _pendingTemperature = 25.0;
   String temp = "--";
-
+  String _receivedData = ""; // ADD THIS - for GasStatusPage to access
   // Humidity State
   double _pendingHumidity = 50.0;
   String humidity = "--";
@@ -41,6 +42,17 @@ class GlobalUsbProvider with ChangeNotifier {
   bool _isHepaHealthy = true;
   String _hepaStatusText = "HEPA Healthy";
 
+  // OR Status Provider Functions
+  bool _defumigation = false; // Light 9
+  bool _orNightMode = false; // Light 8
+  int _pressure1 = 0; // C_PRESSURE_1 with sign
+  bool _isPressurePositive = true; // Track pressure sign
+
+  // Audio functionality
+  final AudioPlayer _audioPlayer = AudioPlayer();
+  bool _isMuted = false;
+  bool _isAlertPlaying = false;
+
   // Message tracking
   String? lastReceivedValue;
   String? lastSentMessage;
@@ -55,6 +67,11 @@ class GlobalUsbProvider with ChangeNotifier {
   static const Duration _reconnectInterval = Duration(seconds: 5);
   static const Duration _statusRequestInterval = Duration(seconds: 10);
 
+  // Command protection
+  DateTime? _lastCommandTime;
+  static const Duration _commandCooldown = Duration(milliseconds: 500);
+  bool _isSendingCommand = false;
+
   // Getters
   double get pendingTemperature => _pendingTemperature;
   String get currentTemperature => temp;
@@ -64,11 +81,22 @@ class GlobalUsbProvider with ChangeNotifier {
   List<bool> get lightStates => _lightStates;
   bool get nightMode => _nightMode;
   bool get allLightsState => _lightStates.any((state) => state);
-
+  String get receivedData => _receivedData;
   // HomeProvider Getters
   bool get isSwitched => _isSwitched;
   bool get isHepaHealthy => _isHepaHealthy;
   String get hepaStatusText => _hepaStatusText;
+
+  // OR Status Provider Getters
+  bool get defumigation => _defumigation;
+  bool get orNightMode => _orNightMode;
+  int get pressure1 => _pressure1;
+  bool get isPressurePositive => _isPressurePositive;
+
+  // Audio Getters
+  AudioPlayer get audioPlayer => _audioPlayer;
+  bool get isMuted => _isMuted;
+  bool get isAlertPlaying => _isAlertPlaying;
 
   // Initialize shared preferences - CALL THIS ONLY ONCE
   Future<void> initSharedPreferences() async {
@@ -80,7 +108,26 @@ class GlobalUsbProvider with ChangeNotifier {
     _prefs = await SharedPreferences.getInstance();
     await _loadSavedValues();
     _isInitialized = true;
+    notifyListeners(); // Notify after loading values
     print("GlobalUsbProvider initialized successfully");
+  }
+
+  // Audio Methods
+  void toggleMute() {
+    _isMuted = !_isMuted;
+    _audioPlayer.setVolume(_isMuted ? 0.0 : 1.0);
+    notifyListeners();
+  }
+
+  void setAlertPlaying(bool value) {
+    _isAlertPlaying = value;
+    notifyListeners();
+  }
+
+  Future<void> stopAudio() async {
+    await _audioPlayer.stop();
+    _isAlertPlaying = false;
+    notifyListeners();
   }
 
   // Function to start active USB monitoring
@@ -96,7 +143,6 @@ class GlobalUsbProvider with ChangeNotifier {
       );
       if (event.event == UsbEvent.ACTION_USB_ATTACHED) {
         // Device attached - trigger connection attempt
-        // Small delay to allow Android OS to fully set up the device after a reboot/attach
         Future.delayed(const Duration(seconds: 1), () {
           if (!isConnected && !_manualDisconnect) {
             print("USB ATTACHED event: Attempting connection...");
@@ -129,13 +175,13 @@ class GlobalUsbProvider with ChangeNotifier {
     // System Status
     _isSwitched = _prefs.getBool('system_switched') ?? false;
 
+    // OR Status Provider Values
+    _defumigation = _prefs.getBool('or_defumigation') ?? false;
+    _orNightMode = _prefs.getBool('or_night_mode') ?? false;
+
     // Lights - Load with detailed logging
     List<String>? intensityStrings = _prefs.getStringList('light_intensities');
     List<String>? stateStrings = _prefs.getStringList('light_states');
-
-    print("Loading light states from SharedPreferences:");
-    print("Intensity strings: $intensityStrings");
-    print("State strings: $stateStrings");
 
     if (intensityStrings != null &&
         stateStrings != null &&
@@ -146,11 +192,7 @@ class GlobalUsbProvider with ChangeNotifier {
           .toList();
       _lightStates = stateStrings.map((s) => s == 'true').toList();
       _nightMode = !_lightStates.any((state) => state);
-
-      print("✅ Successfully loaded light states: $_lightStates");
-      print("✅ Successfully loaded light intensities: $_lightIntensities");
     } else {
-      print("❌ No valid saved light states found, initializing defaults");
       _lightStates = List.filled(7, false);
       _lightIntensities = List.filled(7, 0);
       _nightMode = true;
@@ -160,7 +202,6 @@ class GlobalUsbProvider with ChangeNotifier {
     // Load HEPA status
     refreshHepaStatus();
 
-    notifyListeners();
     print(
       "Loaded saved values - Temp: $temp/$_pendingTemperature, Humidity: $humidity/$_pendingHumidity, System: $_isSwitched, Lights: $_lightStates",
     );
@@ -169,22 +210,18 @@ class GlobalUsbProvider with ChangeNotifier {
   // Save methods
   void _saveCurrentTemperature(String value) {
     _prefs.setString('current_temperature', value);
-    print("Saved current temperature: $value");
   }
 
   void _saveSetpointTemperature(double value) {
     _prefs.setDouble('setpoint_temperature', value);
-    print("Saved setpoint temperature: $value");
   }
 
   void _saveCurrentHumidity(String value) {
     _prefs.setString('current_humidity', value);
-    print("Saved current humidity: $value");
   }
 
   void _saveSetpointHumidity(double value) {
     _prefs.setDouble('setpoint_humidity', value);
-    print("Saved setpoint humidity: $value");
   }
 
   Future<void> _saveLightSettings() async {
@@ -195,9 +232,12 @@ class GlobalUsbProvider with ChangeNotifier {
 
     await _prefs.setStringList('light_intensities', intensityStrings);
     await _prefs.setStringList('light_states', stateStrings);
-    print(
-      "💡 Light settings SAVED - States: $_lightStates, Intensities: $_lightIntensities",
-    );
+  }
+
+  // OR Status Provider Save Methods
+  void _saveORStatusSettings() async {
+    await _prefs.setBool('or_defumigation', _defumigation);
+    await _prefs.setBool('or_night_mode', _orNightMode);
   }
 
   // Temperature methods
@@ -216,7 +256,21 @@ class GlobalUsbProvider with ChangeNotifier {
   void updateSystemStatus(bool status) {
     _isSwitched = status;
     _prefs.setBool('system_switched', status);
-    print("System status updated: $status");
+    notifyListeners();
+  }
+
+  // OR Status Provider Methods
+  void toggleDefumigation(bool newValue) {
+    _defumigation = newValue;
+    _prefs.setBool('or_defumigation', _defumigation);
+    sendCompleteStructure();
+    notifyListeners();
+  }
+
+  void toggleORNightMode(bool newValue) {
+    _orNightMode = newValue;
+    _prefs.setBool('or_night_mode', _orNightMode);
+    sendCompleteStructure();
     notifyListeners();
   }
 
@@ -224,23 +278,21 @@ class GlobalUsbProvider with ChangeNotifier {
   void updateTemperature(String temp) {
     this.temp = temp;
     _saveCurrentTemperature(temp);
-    print("Temperature updated: $temp");
     notifyListeners();
   }
 
   void updateHumidity(String humidity) {
     this.humidity = humidity;
     _saveCurrentHumidity(humidity);
-    print("Humidity updated: $humidity");
     notifyListeners();
   }
 
   // HEPA Status Methods (from HomeProvider)
   void refreshHepaStatus() {
+    // Read the fault bit from SharedPreferences
     final faultBit = _prefs.getString('F_Sensor_10_FAULT_BIT') ?? '0';
     _isHepaHealthy = faultBit == '0';
     _hepaStatusText = _isHepaHealthy ? "HEPA Healthy" : "HEPA Fault";
-    print("HEPA status refreshed: $_hepaStatusText");
     notifyListeners();
   }
 
@@ -257,33 +309,21 @@ class GlobalUsbProvider with ChangeNotifier {
       _prefs.setString('F_Sensor_${i}_FAULT_BIT', '0');
     }
     refreshHepaStatus();
-    print("All sensors reset to no fault");
     notifyListeners();
   }
 
   // Light methods - ALWAYS save when changing lights
   void handleLightChange(int lightIndex, bool? turnOn, int? intensity) {
-    print(
-      "🔄 Changing light $lightIndex - turnOn: $turnOn, intensity: $intensity",
-    );
-    print(
-      "Before change - States: $_lightStates, Intensities: $_lightIntensities",
-    );
-
     if (turnOn != null) {
       _lightStates[lightIndex] = turnOn;
       if (!turnOn) _lightIntensities[lightIndex] = 0;
     }
     if (intensity != null) {
-      _lightIntensities[lightIndex] = intensity;
+      _lightIntensities[lightIndex] = intensity.clamp(0, 100);
       if (intensity > 0) _lightStates[lightIndex] = true;
     }
 
     _nightMode = !_lightStates.any((state) => state);
-
-    print(
-      "After change - States: $_lightStates, Intensities: $_lightIntensities",
-    );
 
     _saveLightSettings();
     notifyListeners();
@@ -328,7 +368,6 @@ class GlobalUsbProvider with ChangeNotifier {
   }
 
   void _cleanupConnection() {
-    print("Cleaning up USB connection...");
     _inputStreamSubscription?.cancel();
     _inputStreamSubscription = null;
     _statusRequestTimer?.cancel();
@@ -341,25 +380,20 @@ class GlobalUsbProvider with ChangeNotifier {
 
   Future<void> initUsb({int retry = 0}) async {
     try {
-      // If already connected, skip
       if (isConnected && _port != null) {
-        print("Already connected, skipping...");
         return;
       }
 
-      // Clean up any existing connection
       _cleanupConnection();
 
       usbStatus = "Scanning for USB devices... (attempt ${retry + 1})";
       notifyListeners();
 
-      // Small delay to allow Android to enumerate
       if (retry == 0) {
         await Future.delayed(const Duration(milliseconds: 500));
       }
 
       List<UsbDevice> devices = await UsbSerial.listDevices();
-      print("Found ${devices.length} USB devices (attempt #${retry + 1})");
 
       if (devices.isEmpty) {
         if (retry < 5) {
@@ -376,12 +410,8 @@ class GlobalUsbProvider with ChangeNotifier {
       // Explicitly look for the CH340 serial device
       UsbDevice? targetDevice;
       for (var device in devices) {
-        print(
-          "Found Device: ${device.deviceName} VID: ${device.vid} PID: ${device.pid}",
-        );
         if (device.vid == CH340_VID && device.pid == CH340_PID) {
           targetDevice = device;
-          print("✅ Found Target CH340/CH341 Device!");
           break;
         }
       }
@@ -396,10 +426,6 @@ class GlobalUsbProvider with ChangeNotifier {
 
       UsbDevice device = targetDevice;
 
-      print(
-        "Attempting to connect to: ${device.deviceName} (VID: ${device.vid}, PID: ${device.pid})",
-      );
-
       _port = await device.create();
       _connectedDevice = device;
 
@@ -413,34 +439,21 @@ class GlobalUsbProvider with ChangeNotifier {
       bool open = await _port!.open();
 
       if (!open) {
-        // ----------------------------------------------------------------------------------
-        // ⚡️ CRITICAL FIX: TARGETED DELAYED RE-ATTEMPT AFTER PERMISSION DIALOG IS SHOWN ⚡️
-        // ----------------------------------------------------------------------------------
         _cleanupConnection();
         usbStatus = "Awaiting USB Permission or device busy. Retrying soon...";
         isConnected = false;
         notifyListeners();
 
-        print("Port failed to open (likely permission related/busy port).");
-
         // Wait 2 seconds for the OS to process the permission grant/device setup.
-        // Then attempt a single, dedicated retry.
         Future.delayed(const Duration(seconds: 2), () {
           if (!isConnected && !_manualDisconnect) {
-            print(
-              "2-Second Permission Delay Passed: Attempting forced reconnect.",
-            );
             initUsb(); // Force an immediate retry now
           }
         });
 
-        // Keep the 5-second timer running as a long-term fallback.
         _startAutoReconnectTimer();
-
-        return; // Exit the current failed attempt
+        return;
       }
-
-      print("Port opened successfully, configuring...");
 
       await Future.delayed(const Duration(milliseconds: 100));
       await _port!.setDTR(true);
@@ -451,8 +464,6 @@ class GlobalUsbProvider with ChangeNotifier {
       isConnected = true;
       _manualDisconnect = false;
       notifyListeners();
-
-      print("✅ USB Connected and configured!");
 
       // Cancel any pending reconnect timers
       _reconnectTimer?.cancel();
@@ -472,7 +483,6 @@ class GlobalUsbProvider with ChangeNotifier {
       );
 
       await Future.delayed(const Duration(milliseconds: 500));
-      requestStatus();
 
       // Start periodic status requests
       _startStatusRequestTimer();
@@ -488,12 +498,10 @@ class GlobalUsbProvider with ChangeNotifier {
   }
 
   void _handleConnectionLoss() {
-    print("Connection lost, initiating auto-reconnect...");
     isConnected = false;
     usbStatus = "Connection lost, reconnecting...";
     _cleanupConnection();
     notifyListeners();
-    // Start auto-reconnect timer as a fallback/immediate recovery attempt
     if (!_manualDisconnect) {
       _startAutoReconnectTimer();
     }
@@ -501,10 +509,8 @@ class GlobalUsbProvider with ChangeNotifier {
 
   void _startAutoReconnectTimer() {
     _reconnectTimer?.cancel();
-    print("Starting auto-reconnect timer (${_reconnectInterval.inSeconds}s)");
     _reconnectTimer = Timer.periodic(_reconnectInterval, (_) {
       if (!isConnected && !_manualDisconnect) {
-        print("Auto-reconnect attempt...");
         initUsb();
       }
     });
@@ -514,33 +520,32 @@ class GlobalUsbProvider with ChangeNotifier {
     _statusRequestTimer?.cancel();
     _statusRequestTimer = Timer.periodic(_statusRequestInterval, (_) {
       if (isConnected) {
-        print("Periodic status request");
-        requestStatus();
+        // Use sendCompleteStructure to periodically request status by sending
+        // a full command, which often triggers a response with the current state.
+        sendCompleteStructure();
       }
     });
   }
 
   void _onDataReceived(Uint8List data) {
     String str = String.fromCharCodes(data);
-    print("Received data chunk: $str");
 
     _incomingBuffer += str;
-
+    _receivedData = _incomingBuffer;
     // Process complete messages
-    if (_incomingBuffer.contains('\n')) {
-      List<String> messages = _incomingBuffer.split('\n');
+    int newlineIndex;
+    while ((newlineIndex = _incomingBuffer.indexOf('\n')) != -1) {
+      String completeMessage = _incomingBuffer
+          .substring(0, newlineIndex)
+          .trim();
+      _incomingBuffer = _incomingBuffer.substring(newlineIndex + 1);
 
-      for (int i = 0; i < messages.length - 1; i++) {
-        String completeMessage = messages[i].trim();
-        if (completeMessage.isNotEmpty) {
-          _processCompleteMessage(completeMessage);
-        }
+      if (completeMessage.isNotEmpty) {
+        _processCompleteMessage(completeMessage);
       }
-
-      _incomingBuffer = messages.last;
     }
 
-    // Process JSON-style messages
+    // Process JSON-style messages if they are not newline-terminated
     if (_incomingBuffer.startsWith('{') && _incomingBuffer.endsWith('}')) {
       _processCompleteMessage(_incomingBuffer);
       _incomingBuffer = "";
@@ -548,117 +553,336 @@ class GlobalUsbProvider with ChangeNotifier {
   }
 
   void _processCompleteMessage(String completeMessage) {
-    print("Processing message: $completeMessage");
     lastReceivedValue = completeMessage;
     _parseStructuredData(completeMessage);
   }
 
-  void _parseStructuredData(String data) {
-    try {
-      if (data.startsWith('{') && data.endsWith('}')) {
-        String content = data.substring(1, data.length - 1);
-        List<String> pairs = content.split(',');
-
-        Map<String, dynamic> parsedData = {};
-
-        for (String pair in pairs) {
-          List<String> keyValue = pair.split(':');
-          if (keyValue.length == 2) {
-            String key = keyValue[0].trim();
-            String value = keyValue[1].trim();
-            parsedData[key] = value;
-
-            if (key.startsWith('F_Sensor_') && key.endsWith('_FAULT_BIT')) {
-              _prefs.setString(key, value);
-            }
-          }
-        }
-
-        // Parse temperature
-        if (parsedData.containsKey('C_OT_TEMP')) {
-          String tempStr = parsedData['C_OT_TEMP'].toString();
-          if (tempStr.length >= 2) {
-            String wholePart = tempStr.substring(0, tempStr.length - 1);
-            String decimalPart = tempStr.substring(tempStr.length - 1);
-            temp = '$wholePart.$decimalPart';
-            _saveCurrentTemperature(temp);
-          } else {
-            temp = tempStr;
-            _saveCurrentTemperature(temp);
-          }
-        }
-
-        // Parse set temperature
-        if (parsedData.containsKey('S_TEMP_SETPT')) {
-          String setTempStr = parsedData['S_TEMP_SETPT'].toString();
-          if (setTempStr.length >= 2) {
-            String numericPart = setTempStr.substring(0, setTempStr.length - 1);
-            _pendingTemperature = double.parse(numericPart).toDouble();
-            _saveSetpointTemperature(_pendingTemperature);
-          }
-        }
-
-        // Parse humidity
-        if (parsedData.containsKey('C_RH')) {
-          String humStr = parsedData['C_RH'].toString();
-          if (humStr.length >= 2) {
-            String wholePart = humStr.substring(0, humStr.length - 1);
-            String decimalPart = humStr.substring(humStr.length - 1);
-            humidity = '$wholePart.$decimalPart';
-            _saveCurrentHumidity(humidity);
-          } else {
-            humidity = humStr;
-            _saveCurrentHumidity(humidity);
-          }
-        }
-
-        // Parse set humidity
-        if (parsedData.containsKey('S_RH_SETPT')) {
-          String setHumStr = parsedData['S_RH_SETPT'].toString();
-          if (setHumStr.length >= 2) {
-            String wholePart = setHumStr.substring(0, setHumStr.length - 1);
-            String decimalPart = setHumStr.substring(wholePart.length - 1);
-            _pendingHumidity = double.parse(
-              "$wholePart.$decimalPart",
-            ).toDouble();
-            _saveSetpointHumidity(_pendingHumidity);
-          }
-        }
-
-        // Parse lights
-        bool anyLightOn = false;
-        for (int i = 1; i <= 7; i++) {
-          String lightOnOffKey = 'S_Light_${i}_ON_OFF';
-          if (parsedData.containsKey(lightOnOffKey)) {
-            bool state = parsedData[lightOnOffKey] == '1';
-            _lightStates[i - 1] = state;
-            if (state) anyLightOn = true;
-          }
-
-          String intensityKey = 'S_Light_${i}_Intensity';
-          if (parsedData.containsKey(intensityKey)) {
-            try {
-              _lightIntensities[i - 1] = int.parse(
-                parsedData[intensityKey].toString(),
-              );
-            } catch (e) {
-              print(
-                "Error parsing intensity for light $i: ${parsedData[intensityKey]}",
-              );
-            }
-          }
-        }
-        _nightMode = !anyLightOn;
-        _saveLightSettings();
-
-        refreshHepaStatus();
-        notifyListeners();
-      }
-    } catch (e) {
-      print("Error parsing data: $e");
+  // Helper method for pressure sign
+  int _applySign(String rawValue, String? signBit) {
+    int val = int.tryParse(rawValue) ?? 0;
+    if (signBit == null) return val;
+    if (signBit == '1') {
+      return val;
+    } else {
+      return -val;
     }
   }
 
+  // Helper method to log value changes
+  void _logValueChanges(String type, String oldValue, String newValue) {
+    if (oldValue != newValue) {
+      print("🔄 $type changed: $oldValue → $newValue");
+    } else {
+      print("✅ $type unchanged: $oldValue");
+    }
+  }
+
+  void _parseStructuredData(String data) async {
+    try {
+      if (!(data.startsWith('{') && data.endsWith('}'))) {
+        print("❌ Invalid structured format: $data");
+        return;
+      }
+
+      final pairs = data.substring(1, data.length - 1).split(',');
+      final Map<String, dynamic> parsedData = {};
+
+      for (String pair in pairs) {
+        final int separatorIndex = pair.indexOf(':');
+        if (separatorIndex == -1) continue;
+
+        final key = pair.substring(0, separatorIndex).trim();
+        final value = pair.substring(separatorIndex + 1).trim();
+        parsedData[key] = value;
+
+        // Save Fault Bits immediately
+        if (key.startsWith('F_Sensor_') && key.endsWith('_FAULT_BIT')) {
+          try {
+            if (_prefs != null) await _prefs!.setString(key, value);
+          } catch (e) {
+            print("❌ Failed to save fault bit $key: $e");
+          }
+        }
+      }
+
+      final originalTemp = temp;
+      final originalHumidity = humidity;
+      final originalPendingTemp = _pendingTemperature;
+      final originalPendingHumidity = _pendingHumidity;
+
+      double? _parseScaledValue(
+        String raw,
+        double min,
+        double max,
+        String label,
+      ) {
+        try {
+          final value = int.parse(raw) / 10.0;
+          if (value >= min - 1 && value <= max + 1) return value;
+          print("⚠️ $label out of range: $value");
+        } catch (e) {
+          print("❌ Error parsing $label: $e");
+        }
+        return null;
+      }
+
+      void _logValueChanges(String label, dynamic oldVal, dynamic newVal) {
+        if (oldVal.toString() != newVal.toString()) {
+          print("🔄 $label changed: $oldVal → $newVal");
+        }
+      }
+
+      double _applySign(String value, String? signBit) {
+        try {
+          final doubleVal = double.parse(value) / 10.0;
+          return (signBit == '1') ? doubleVal : -doubleVal;
+        } catch (e) {
+          print("❌ Error applying sign: $e");
+          return 0.0;
+        }
+      }
+
+      // 🌡️ Temperature (Current)
+      if (parsedData.containsKey('C_OT_TEMP')) {
+        final raw = parsedData['C_OT_TEMP'].toString();
+        print("🔧 RAW C_OT_TEMP: '$raw'");
+        final parsed = _parseScaledValue(raw, 15.0, 35.0, "Temperature");
+        if (parsed != null) {
+          final old = temp;
+          temp = parsed.toStringAsFixed(1);
+          _logValueChanges("Temperature", old, temp);
+          _saveCurrentTemperature(temp);
+        } else {
+          print("⚠️ Keeping old temperature: $originalTemp");
+        }
+      } else {
+        print("❌ C_OT_TEMP key not found");
+      }
+
+      // 🌡️ Temperature Setpoint
+      if (parsedData.containsKey('S_TEMP_SETPT')) {
+        final raw = parsedData['S_TEMP_SETPT'].toString();
+        print("🔧 RAW S_TEMP_SETPT: '$raw'");
+        final parsed = _parseScaledValue(raw, 15.0, 35.0, "Set Temperature");
+        if (parsed != null) {
+          final old = _pendingTemperature;
+          _pendingTemperature = parsed;
+          print("✅ Parsed S_TEMP_SETPT: $old → $_pendingTemperature°C");
+          _saveSetpointTemperature(_pendingTemperature);
+        } else {
+          print("⚠️ Keeping old set temperature: $originalPendingTemp");
+        }
+      } else {
+        print("❌ S_TEMP_SETPT key not found");
+      }
+
+      // 💧 Humidity (Current)
+      if (parsedData.containsKey('C_RH')) {
+        final raw = parsedData['C_RH'].toString();
+        print("🔧 RAW C_RH: '$raw'");
+        final parsed = _parseScaledValue(raw, 0.0, 100.0, "Humidity");
+        if (parsed != null) {
+          final old = humidity;
+          humidity = parsed.toStringAsFixed(1);
+          _logValueChanges("Humidity", old, humidity);
+          _saveCurrentHumidity(humidity);
+        } else {
+          print("⚠️ Keeping old humidity: $originalHumidity");
+        }
+      } else {
+        print("❌ C_RH key not found");
+      }
+
+      // 💧 Humidity Setpoint
+      if (parsedData.containsKey('S_RH_SETPT')) {
+        final raw = parsedData['S_RH_SETPT'].toString();
+        print("🔧 RAW S_RH_SETPT: '$raw'");
+        final parsed = _parseScaledValue(raw, 0.0, 100.0, "Set Humidity");
+        if (parsed != null) {
+          final old = _pendingHumidity;
+          _pendingHumidity = parsed;
+          print("✅ Parsed S_RH_SETPT: $old → $_pendingHumidity%");
+          _saveSetpointHumidity(_pendingHumidity);
+        } else {
+          print("⚠️ Keeping old set humidity: $originalPendingHumidity");
+        }
+      } else {
+        print("❌ S_RH_SETPT key not found");
+      }
+
+      // 🔵 Pressure
+      if (parsedData.containsKey('C_PRESSURE_1')) {
+        final sign = parsedData['C_PRESSURE_1_SIGN_BIT'];
+        _pressure1 = _applySign(
+          parsedData['C_PRESSURE_1'] ?? '0',
+          sign,
+        ).toInt();
+        _isPressurePositive = sign == '1';
+        print(
+          "✅ Parsed Pressure: $_pressure1 (${_isPressurePositive ? '+' : '-'})",
+        );
+      }
+
+      // 💡 OR Status Lights (8–10)
+      for (int i = 8; i <= 10; i++) {
+        final key = 'S_Light_${i}_ON_OFF';
+        if (parsedData.containsKey(key)) {
+          final on = parsedData[key] == '1';
+          try {
+            if (_prefs != null) {
+              if (i == 8) {
+                _orNightMode = on;
+                await _prefs!.setBool('or_night_mode', on);
+              } else if (i == 9) {
+                _defumigation = on;
+                await _prefs!.setBool('or_defumigation', on);
+              } else if (i == 10 && _isSwitched != on) {
+                _isSwitched = on;
+                await _prefs!.setBool('system_switched', on);
+              }
+            }
+          } catch (e) {
+            print("❌ Failed to persist OR light $i: $e");
+          }
+        }
+      }
+
+      // 💡 Regular Lights (1–7)
+      bool anyLightOn = false;
+      for (int i = 1; i <= 7; i++) {
+        final onKey = 'S_Light_${i}_ON_OFF';
+        final intensityKey = 'S_Light_${i}_Intensity';
+
+        if (parsedData.containsKey(onKey)) {
+          final state = parsedData[onKey] == '1';
+          if (i - 1 < _lightStates.length) {
+            _lightStates[i - 1] = state;
+            if (state) anyLightOn = true;
+          } else {
+            print("⚠️ Light index out of range: $i");
+          }
+        }
+
+        if (parsedData.containsKey(intensityKey)) {
+          try {
+            final intensity = int.parse(parsedData[intensityKey].toString());
+            if (i - 1 < _lightIntensities.length) {
+              _lightIntensities[i - 1] = intensity;
+            }
+          } catch (e) {
+            print("❌ Error parsing $intensityKey: $e");
+          }
+        }
+      }
+
+      _nightMode = !anyLightOn;
+      _saveLightSettings();
+
+      refreshHepaStatus();
+      notifyListeners();
+    } catch (e) {
+      print("❌ Error parsing structured data: $e");
+      print("❌ Data that caused error: $data");
+    }
+  }
+
+  // Command protection helper
+  bool _canSendCommand() {
+    final now = DateTime.now();
+    if (_isSendingCommand) {
+      print("⏳ Already sending command, please wait");
+      return false;
+    }
+
+    if (_lastCommandTime != null &&
+        now.difference(_lastCommandTime!) < _commandCooldown) {
+      print("⏳ Command cooldown - please wait");
+      return false;
+    }
+
+    if (_port == null || !isConnected) {
+      print("Cannot send - USB not connected");
+      return false;
+    }
+
+    return true;
+  }
+
+  void sendTemperatureStructure() {
+    if (_port == null || !isConnected) {
+      print("Cannot send - USB not connected");
+      return;
+    }
+
+    List<String> pairs = [];
+
+    pairs.add('SR_WSL:250028');
+
+    // Only send light states and intensities (1-10)
+    for (int i = 1; i <= 10; i++) {
+      pairs.add('S_Light_${i}_ON_OFF:${getLightState(i)}');
+    }
+
+    for (int i = 1; i <= 10; i++) {
+      pairs.add('S_Light_${i}_Intensity:${getLightIntensity(i)}');
+    }
+
+    // Temperature setpoint ONLY (modified)
+    int tempToSend = (_pendingTemperature * 10).toInt();
+    String tempValue = tempToSend.toString().padLeft(3, '0');
+    pairs.add('S_TEMP_SETPT:$tempValue');
+
+    // Keep existing humidity setpoint (unchanged)
+    int humidityToSend = (_pendingHumidity * 10).toInt();
+    String humidityValue = humidityToSend.toString().padLeft(3, '0');
+    pairs.add('S_RH_SETPT:$humidityValue');
+
+    String command = '{${pairs.join(',')}}\n';
+    _sendCommand(command, "TEMPERATURE");
+
+    print(
+      "📤 Sent TEMPERATURE ONLY - setpoint: $_pendingTemperature°C -> $tempValue",
+    );
+  }
+
+  void sendHumidityStructure() {
+    if (_port == null || !isConnected) {
+      print("Cannot send - USB not connected");
+      return;
+    }
+
+    List<String> pairs = [];
+
+    pairs.add('SR_WSL:250028');
+
+    // Only send light states and intensities (1-10)
+    for (int i = 1; i <= 10; i++) {
+      pairs.add('S_Light_${i}_ON_OFF:${getLightState(i)}');
+    }
+
+    for (int i = 1; i <= 10; i++) {
+      pairs.add('S_Light_${i}_Intensity:${getLightIntensity(i)}');
+    }
+
+    // Keep existing temperature setpoint (unchanged)
+    int tempToSend = (_pendingTemperature * 10).toInt();
+    String tempValue = tempToSend.toString().padLeft(3, '0');
+    pairs.add('S_TEMP_SETPT:$tempValue');
+
+    // Humidity setpoint ONLY (modified)
+    int humidityToSend = (_pendingHumidity * 10).toInt();
+    String humidityValue = humidityToSend.toString().padLeft(3, '0');
+    pairs.add('S_RH_SETPT:$humidityValue');
+
+    String command = '{${pairs.join(',')}}\n';
+    _sendCommand(command, "HUMIDITY");
+
+    print(
+      "📤 Sent HUMIDITY ONLY - setpoint: $_pendingHumidity% -> $humidityValue",
+    );
+  }
+
+  // Keep the original complete structure for reference
   void sendCompleteStructure() {
     if (_port == null || !isConnected) {
       print("Cannot send - USB not connected");
@@ -667,66 +891,78 @@ class GlobalUsbProvider with ChangeNotifier {
 
     List<String> pairs = [];
 
-    pairs.add('SR_WSL:200001');
-    pairs.add('C_PRESSURE_1:000');
-    pairs.add('C_PRESSURE_1_SIGN_BIT:1');
-    pairs.add('C_PRESSURE_2:000');
-    pairs.add('C_PRESSURE_2_SIGN_BIT:1');
+    pairs.add('SR_WSL:250028');
 
-    String tempValue = "250";
-    if (temp != "--") {
-      try {
-        double currentTemp = double.parse(temp);
-        tempValue = (currentTemp * 10).toInt().toString().padLeft(3, '0');
-      } catch (e) {
-        tempValue = "250";
-      }
-    }
-    pairs.add('C_OT_TEMP:$tempValue');
-
-    String humValue = "500";
-    if (humidity != "--") {
-      try {
-        double currentHum = double.parse(humidity);
-        humValue = (currentHum * 10).toInt().toString().padLeft(3, '0');
-      } catch (e) {
-        humValue = "500";
-      }
-    }
-    pairs.add('C_RH:$humValue');
-
-    for (int i = 1; i <= 7; i++) {
-      pairs.add('F_Sensor_${i}_FAULT_BIT:0');
-      pairs.add('S_Sensor_${i}_NO_NC_SETTING:1');
-      pairs.add('S_Light_${i}_ON_OFF:${_lightStates[i - 1] ? '1' : '0'}');
-      pairs.add(
-        'S_Light_${i}_Intensity:${_lightIntensities[i - 1].toString().padLeft(3, '0')}',
-      );
+    // Only send light states and intensities (1-10)
+    for (int i = 1; i <= 10; i++) {
+      pairs.add('S_Light_${i}_ON_OFF:${getLightState(i)}');
     }
 
-    pairs.add('S_IOT_TIMER:0060');
-    pairs.add(
-      'S_TEMP_SETPT:${(_pendingTemperature * 10).toInt().toString().padLeft(3, '0')}',
-    );
-    pairs.add(
-      'S_RH_SETPT:${(_pendingHumidity * 10).toInt().toString().padLeft(3, '0')}',
-    );
+    for (int i = 1; i <= 10; i++) {
+      pairs.add('S_Light_${i}_Intensity:${getLightIntensity(i)}');
+    }
+
+    // Both setpoints
+    int tempToSend = (_pendingTemperature * 10).toInt();
+    String tempValue = tempToSend.toString().padLeft(3, '0');
+    pairs.add('S_TEMP_SETPT:$tempValue');
+
+    int humidityToSend = (_pendingHumidity * 10).toInt();
+    String humidityValue = humidityToSend.toString().padLeft(3, '0');
+    pairs.add('S_RH_SETPT:$humidityValue');
 
     String command = '{${pairs.join(',')}}\n';
-    _port!.write(Uint8List.fromList(command.codeUnits));
+    _sendCommand(command, "COMPLETE");
+  }
 
+  // Helper methods
+  String getLightState(int index) {
+    if (index >= 1 && index <= 7) {
+      return _lightStates[index - 1] ? '1' : '0';
+    } else if (index == 8) {
+      return _orNightMode ? '1' : '0';
+    } else if (index == 9) {
+      return _defumigation ? '1' : '0';
+    } else if (index == 10) {
+      return _isSwitched ? '1' : '0';
+    }
+    return '0';
+  }
+
+  String getLightIntensity(int index) {
+    if (index >= 1 && index <= 7) {
+      return _lightIntensities[index - 1].toString().padLeft(3, '0');
+    } else if (index == 8) {
+      return _orNightMode ? '080' : '000'; // Match your example
+    } else if (index == 9) {
+      return _defumigation ? '090' : '000'; // Match your example
+    } else if (index == 10) {
+      return _isSwitched ? '050' : '000'; // Match your example
+    }
+    return '000';
+  }
+
+  void _sendCommand(String command, String type) {
+    _port!.write(Uint8List.fromList(command.codeUnits));
     lastSentMessage = command.trim();
 
-    _saveSetpointTemperature(_pendingTemperature);
-    _saveSetpointHumidity(_pendingHumidity);
-    _saveLightSettings();
+    if (type == "TEMPERATURE") {
+      _saveSetpointTemperature(_pendingTemperature);
+    } else if (type == "HUMIDITY") {
+      _saveSetpointHumidity(_pendingHumidity);
+    } else if (type == "COMPLETE") {
+      _saveSetpointTemperature(_pendingTemperature);
+      _saveSetpointHumidity(_pendingHumidity);
+    }
 
-    print("Sent command: $command");
+    _saveLightSettings();
+    _saveORStatusSettings();
+
+    print("📤 Sent $type command: ${command.trim()}");
     notifyListeners();
   }
 
   void reconnectUsb() {
-    print("Manual reconnect requested");
     _manualDisconnect = false;
     _reconnectTimer?.cancel();
     isConnected = false;
@@ -734,32 +970,48 @@ class GlobalUsbProvider with ChangeNotifier {
     initUsb();
   }
 
-  void requestStatus() {
+  void requestSensorData() {
     if (_port != null && isConnected) {
-      String command = "STATUS\n";
+      String command = "GET_SENSORS\n";
       _port!.write(Uint8List.fromList(command.codeUnits));
-      print("Sent STATUS request");
-    } else {
-      print("Cannot send STATUS - USB not connected");
     }
   }
 
   void testUsbCommunication() {
     if (_port != null && isConnected) {
-      print("Testing USB communication...");
-
       String testCommand = "TEST\n";
       _port!.write(Uint8List.fromList(testCommand.codeUnits));
-      print("Sent test command");
 
-      requestStatus();
-
-      Future.delayed(Duration(seconds: 2), () {
+      Future.delayed(const Duration(seconds: 2), () {
         sendCompleteStructure();
       });
-    } else {
-      print("USB not connected for testing");
     }
+  }
+
+  // System power control with complete structure
+  void toggleSystemPower(bool turnOn) {
+    // 1. Update UI state immediately for responsiveness
+    _isSwitched = turnOn;
+    _prefs.setBool('system_switched', turnOn);
+
+    print("✅ System status updated to: $_isSwitched");
+    notifyListeners();
+
+    // 2. Send the COMPLETE, updated structure to the device
+    // This ensures all other settings (temp/humidity setpoints, lights) are preserved
+    if (_port != null && isConnected) {
+      sendCompleteStructure();
+      print(
+        "📤 System power ${turnOn ? 'ON' : 'OFF'} command sent via complete structure.",
+      );
+    } else {
+      print("⚠️ USB not connected, but UI state updated to: $turnOn");
+    }
+  }
+
+  // Use toggleSystemPower internally
+  void toggleSystem(bool newValue) {
+    toggleSystemPower(newValue);
   }
 
   @override
@@ -769,6 +1021,7 @@ class GlobalUsbProvider with ChangeNotifier {
     _inputStreamSubscription?.cancel();
     _usbEventSubscription?.cancel();
     _port?.close();
+    _audioPlayer.dispose();
     super.dispose();
   }
 }

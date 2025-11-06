@@ -9,13 +9,11 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:surgeon_control_panel/patient%20info/dashboard/store/storeitems.dart';
 import 'package:surgeon_control_panel/provider/audioProvider.dart';
+import 'package:surgeon_control_panel/provider/clockprovider.dart';
 import 'package:surgeon_control_panel/provider/environment_state.dart';
-import 'package:surgeon_control_panel/provider/home_provider.dart';
-import 'package:surgeon_control_panel/provider/humidity_state.dart';
-import 'package:surgeon_control_panel/provider/light_provider.dart';
+import 'package:surgeon_control_panel/provider/humiditypro.dart';
 import 'package:surgeon_control_panel/provider/or_status_provider.dart';
 import 'package:surgeon_control_panel/provider/room_cleanliness_provider.dart';
-import 'package:surgeon_control_panel/provider/temperature_state.dart';
 import 'package:surgeon_control_panel/screen/cssd.dart';
 import 'package:surgeon_control_panel/screen/entrance.dart';
 import 'package:surgeon_control_panel/screen/home.dart';
@@ -88,11 +86,12 @@ Future<void> main() async {
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => StopwatchProvider()),
-        ChangeNotifierProvider(create: (_) => AudioProvider()),
         ChangeNotifierProvider(create: (context) => ORStatusProvider()),
         ChangeNotifierProvider(create: (context) => RoomCleanlinessProvider()),
         ChangeNotifierProvider(create: (context) => EnvironmentState()),
         ChangeNotifierProvider(create: (context) => globalUsbProvider),
+        ChangeNotifierProvider(create: (context) => HumidityState()),
+        ChangeNotifierProvider(create: (context) => ClockProvider()),
       ],
       child: const MyApp(),
     ),
@@ -116,7 +115,7 @@ class MyApp extends StatelessWidget {
         case 'Entrance':
           return ORStatusMonitor();
         case 'Store':
-          return HospitalStoreScreen();
+          return HospitalApp();
         case 'CSSD':
           return CssdApp();
         default:
@@ -250,7 +249,7 @@ class _LoginPageState extends State<LoginPage> {
         nextScreen = ORStatusMonitor();
         break;
       case 'Store':
-        nextScreen = HospitalStoreScreen();
+        nextScreen = HospitalApp();
         break;
       case 'CSSD':
         nextScreen = CssdApp();

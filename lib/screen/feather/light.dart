@@ -36,17 +36,11 @@ class _LightIntensityPageState extends State<LightIntensityPage> {
     super.dispose();
   }
 
-  // USB Communication Methods - REMOVE THIS DUPLICATE USB MANAGEMENT
-  // Since GlobalUsbProvider now handles USB, we don't need separate USB management here
-  // All USB operations should go through the GlobalUsbProvider
-
   void _sendCommand(String cmd) {
     final usbProvider = Provider.of<GlobalUsbProvider>(context, listen: false);
 
     if (usbProvider.isConnected) {
       // Use the provider's send method instead of local USB management
-      // Note: You may need to add a sendRawCommand method to GlobalUsbProvider
-      // if you need to send specific commands like "STATUS"
       debugPrint("Light Page attempting to send: $cmd");
     }
   }
@@ -167,6 +161,27 @@ class _LightIntensityPageState extends State<LightIntensityPage> {
     );
   }
 
+  void _toggleAllLights(bool newState) {
+    final usbProvider = Provider.of<GlobalUsbProvider>(context, listen: false);
+
+    // If turning all lights on, set all to 50% intensity
+    // If turning all lights off, set all to 0% intensity
+    for (int i = 0; i < usbProvider.lightStates.length; i++) {
+      usbProvider.handleLightChange(i, newState, newState ? 50 : 0);
+    }
+
+    _sendCompleteStructure();
+  }
+
+  void _toggleNightMode(bool newState) {
+    final usbProvider = Provider.of<GlobalUsbProvider>(context, listen: false);
+
+    // You'll need to add a method in GlobalUsbProvider to handle night mode
+    // For now, let's assume there's a method called setNightMode
+    // If not, you'll need to implement it in your provider
+    _sendCompleteStructure();
+  }
+
   @override
   Widget build(BuildContext context) {
     final usbProvider = Provider.of<GlobalUsbProvider>(context);
@@ -284,7 +299,7 @@ class _LightIntensityPageState extends State<LightIntensityPage> {
                     ),
                   ),
 
-                  // SCROLLABLE LIGHT CONTROLS////android\app\src\main\java\io\flutter\plugins\GeneratedPluginRegistrant.java
+                  // SCROLLABLE LIGHT CONTROLS
                   Expanded(
                     child: ListView(
                       padding: EdgeInsets.zero,
@@ -295,20 +310,7 @@ class _LightIntensityPageState extends State<LightIntensityPage> {
                           isOn: usbProvider.allLightsState,
                           intensity: 0,
                           onToggle: (v) {
-                            // usbProvider.toggleAllLights();
-                            _sendCompleteStructure();
-                          },
-                          showSlider: false,
-                        ),
-
-                        // 2. Night Mode Toggle
-                        _buildLightControlItem(
-                          title: "Night Mode",
-                          isOn: usbProvider.nightMode,
-                          intensity: 0,
-                          onToggle: (v) {
-                            // usbProvider.toggleNightMode();
-                            _sendCompleteStructure();
+                            _toggleAllLights(v);
                           },
                           showSlider: false,
                         ),
