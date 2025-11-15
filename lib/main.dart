@@ -17,6 +17,7 @@ import 'package:surgeon_control_panel/provider/room_cleanliness_provider.dart';
 import 'package:surgeon_control_panel/screen/cssd.dart';
 import 'package:surgeon_control_panel/screen/entrance.dart';
 import 'package:surgeon_control_panel/screen/home.dart';
+import 'package:surgeon_control_panel/services/globalespprovider.dart';
 import 'package:surgeon_control_panel/services/usb_service.dart';
 import 'package:video_player/video_player.dart';
 import 'provider/stopwatch_provider.dart';
@@ -92,6 +93,8 @@ Future<void> main() async {
         ChangeNotifierProvider(create: (context) => globalUsbProvider),
         ChangeNotifierProvider(create: (context) => HumidityState()),
         ChangeNotifierProvider(create: (context) => ClockProvider()),
+        ChangeNotifierProvider(create: (context) => ESP32State()),
+        ChangeNotifierProvider(create: (context) => MusicPlayerProvider()),
       ],
       child: const MyApp(),
     ),
@@ -115,7 +118,7 @@ class MyApp extends StatelessWidget {
         case 'Entrance':
           return ORStatusMonitor();
         case 'Store':
-          return HospitalApp();
+          return StoreHomeScreen();
         case 'CSSD':
           return CssdApp();
         default:
@@ -249,7 +252,7 @@ class _LoginPageState extends State<LoginPage> {
         nextScreen = ORStatusMonitor();
         break;
       case 'Store':
-        nextScreen = HospitalApp();
+        nextScreen = StoreHomeScreen();
         break;
       case 'CSSD':
         nextScreen = CssdApp();

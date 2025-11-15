@@ -4,6 +4,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:surgeon_control_panel/main.dart';
+// Make sure this path is correct
 import 'package:surgeon_control_panel/services/usb_service.dart';
 
 class ORStatusMonitor extends StatefulWidget {
@@ -24,6 +25,9 @@ class _ORStatusMonitorState extends State<ORStatusMonitor>
   late Timer _dateTimeTimer;
   DateTime _currentDateTime = DateTime.now();
 
+  // Data refresh timer - REMOVED
+  // late Timer _dataRefreshTimer; // <-- THIS WAS THE CONFLICT. IT IS GONE.
+
   final Random _random = Random();
   final List<MedicalParticle> _particles = [];
 
@@ -31,18 +35,42 @@ class _ORStatusMonitorState extends State<ORStatusMonitor>
   void initState() {
     super.initState();
 
-    // Initialize provider - UPDATED to use GlobalUsbProvider
+    // Initialize provider
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final provider = Provider.of<GlobalUsbProvider>(context, listen: false);
-      provider.initSharedPreferences().then((_) => provider.initUsb());
+      _initializeProvider();
     });
 
-    // particles
+    // Initialize particles
     for (int i = 0; i < 18; i++) {
       _particles.add(MedicalParticle(_random));
     }
 
-    // animations
+    // Initialize animations
+    _initializeAnimations();
+
+    // Initialize date/time timer
+    _dateTimeTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      setState(() {
+        _currentDateTime = DateTime.now();
+      });
+    });
+
+    // REMOVED: The conflicting timer. GlobalUsbProvider handles all refreshes.
+    // _dataRefreshTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
+    //   _refreshSensorData();
+    // });
+  }
+
+  void _initializeProvider() {
+    final provider = Provider.of<GlobalUsbProvider>(context, listen: false);
+    provider.initSharedPreferences().then((_) {
+      provider.initUsb();
+      // Add listener for data changes
+      provider.addListener(_onProviderDataChanged);
+    });
+  }
+
+  void _initializeAnimations() {
     _cardController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 700),
@@ -66,14 +94,18 @@ class _ORStatusMonitorState extends State<ORStatusMonitor>
     );
 
     _cardController.forward();
-
-    // Initialize date/time timer
-    _dateTimeTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      setState(() {
-        _currentDateTime = DateTime.now();
-      });
-    });
   }
+
+  void _onProviderDataChanged() {
+    if (mounted) {
+      setState(() {
+        // This will trigger UI rebuild when provider data changes
+      });
+    }
+  }
+
+  // REMOVED: This function was part of the conflict.
+  // Future<void> _refreshSensorData() async { ... }
 
   @override
   void dispose() {
@@ -81,13 +113,16 @@ class _ORStatusMonitorState extends State<ORStatusMonitor>
     _bgController.dispose();
     _pulseController.dispose();
     _dateTimeTimer.cancel();
+    // _dataRefreshTimer.cancel(); // <-- REMOVED
 
-    // Cleanup USB - UPDATED: No need for separate disposeUsb as GlobalUsbProvider handles it in its own dispose
+    // Remove listener and cleanup
+    final provider = Provider.of<GlobalUsbProvider>(context, listen: false);
+    provider.removeListener(_onProviderDataChanged);
+
     super.dispose();
   }
 
   Future<void> _logout() async {
-    // Handle logout logic here
     if (mounted) {
       Navigator.pushAndRemoveUntil(
         context,
@@ -128,7 +163,7 @@ class _ORStatusMonitorState extends State<ORStatusMonitor>
     return months[m - 1];
   }
 
-  // Method to format pressure value with color and proper decimal format - UPDATED
+  // Method to format pressure value with color and proper decimal format
   Widget _buildPressureValue(GlobalUsbProvider provider) {
     String displayValue;
     Color textColor;
@@ -153,11 +188,41 @@ class _ORStatusMonitorState extends State<ORStatusMonitor>
     );
   }
 
+  Widget _buildConnectionStatus(GlobalUsbProvider provider) {
+    return Row(
+      children: [
+        Container(
+          width: 12,
+          height: 12,
+          decoration: BoxDecoration(
+            color: provider.isConnected ? Colors.greenAccent : Colors.redAccent,
+            shape: BoxShape.circle,
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          provider.isConnected ? 'Connected' : 'Disconnected',
+          style: TextStyle(
+            color: provider.isConnected ? Colors.greenAccent : Colors.redAccent,
+            fontSize: 12,
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer<GlobalUsbProvider>(
-      // UPDATED: Changed to GlobalUsbProvider
       builder: (context, provider, child) {
+        // Debug print to check if data is updating
+        print(
+          'UI Build - Temp: ${provider.currentTemperature}, '
+          'Humidity: ${provider.currentHumidity}, '
+          'Pressure: ${provider.pressure1}, '
+          'Connected: ${provider.isConnected}',
+        );
+
         return Scaffold(
           backgroundColor: const Color(0xFF3D8A8F),
           body: Stack(
@@ -245,38 +310,25 @@ class _ORStatusMonitorState extends State<ORStatusMonitor>
                               ),
                             ],
                           ),
-                          Row(
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
-                              // USB status indicator
-                              Container(
-                                width: 12,
-                                height: 12,
-                                decoration: BoxDecoration(
-                                  color: provider.isConnected
-                                      ? Colors.transparent
-                                      : Colors.redAccent,
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              // Refresh button for sensor data - UPDATED method name
-                              IconButton(
-                                onPressed: provider.requestSensorData,
-                                icon: const Icon(
-                                  Icons.refresh,
-                                  color: Colors.white70,
-                                  size: 24,
-                                ),
-                                tooltip: "Refresh Sensor Data",
-                              ),
-                              const SizedBox(width: 8),
-                              IconButton(
-                                onPressed: _logout,
-                                icon: const Icon(
-                                  Icons.logout,
-                                  color: Colors.white70,
-                                  size: 28,
-                                ),
+                              _buildConnectionStatus(provider),
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  // REMOVED: Refresh button
+                                  // IconButton( ... ),
+                                  const SizedBox(width: 8),
+                                  IconButton(
+                                    onPressed: _logout,
+                                    icon: const Icon(
+                                      Icons.logout,
+                                      color: Colors.white70,
+                                      size: 28,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
                           ),
@@ -309,7 +361,7 @@ class _ORStatusMonitorState extends State<ORStatusMonitor>
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                               children: [
-                                // Line 1: Temperature, R/H, and Room Pressure - UPDATED data sources
+                                // Line 1: Temperature, R/H, and Room Pressure
                                 _buildThreeItemRow(
                                   item1: _statusTile(
                                     title: "Temperature",
@@ -367,7 +419,6 @@ class _ORStatusMonitorState extends State<ORStatusMonitor>
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceAround,
                         children: [
-                          // UPDATED: Changed method calls to GlobalUsbProvider methods
                           _customToggle(
                             label: "Defumigation",
                             value: provider.defumigation,
@@ -376,22 +427,17 @@ class _ORStatusMonitorState extends State<ORStatusMonitor>
                           ),
                           _customToggle(
                             label: "System",
-                            value: provider
-                                .isSwitched, // UPDATED: Using isSwitched instead of systemOn
+                            value: provider.isSwitched,
                             icon: Icons.power_settings_new,
                             onChanged: (value) {
-                              provider.toggleSystemPower(
-                                value,
-                              ); // UPDATED: Using toggleSystemPower
+                              provider.toggleSystemPower(value);
                             },
                           ),
                           _customToggle(
                             label: "Night",
-                            value: provider
-                                .orNightMode, // UPDATED: Using orNightMode
+                            value: provider.orNightMode,
                             icon: Icons.mode_night_outlined,
-                            onChanged: provider
-                                .toggleORNightMode, // UPDATED: Using toggleORNightMode
+                            onChanged: provider.toggleORNightMode,
                           ),
                         ],
                       ),
@@ -406,7 +452,6 @@ class _ORStatusMonitorState extends State<ORStatusMonitor>
     );
   }
 
-  // UPDATED: Changed parameter type to GlobalUsbProvider
   Widget _pressureStatusTile({
     required String title,
     required IconData icon,
@@ -628,7 +673,7 @@ class _ORStatusMonitorState extends State<ORStatusMonitor>
   }
 }
 
-// Keep all your existing helper classes exactly as they were (they don't need changes)
+// Keep all your existing helper classes as they were
 class _AnimatedCounter extends StatefulWidget {
   final String value;
   const _AnimatedCounter({Key? key, required this.value}) : super(key: key);
@@ -664,10 +709,12 @@ class _AnimatedCounterState extends State<_AnimatedCounter>
   void _updateValue() {
     final start = double.tryParse(_currentValue) ?? 0.0;
     final end = double.tryParse(widget.value) ?? 0.0;
-    _animation = Tween<double>(
-      begin: start,
-      end: end,
-    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
+    _animation = Tween<double>(begin: start, end: end).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: Curves.easeOut,
+      ), // <-- FIXED TYPO
+    );
     _controller.forward(from: 0);
   }
 
@@ -739,7 +786,7 @@ class MedicalParticle {
 }
 
 class ClinicalBackgroundPainter extends CustomPainter {
-  final double t; // 0..1
+  final double t;
   final List<MedicalParticle> particles;
   ClinicalBackgroundPainter({required this.t, required this.particles});
 
@@ -757,6 +804,7 @@ class ClinicalBackgroundPainter extends CustomPainter {
       ],
     );
     canvas.drawRect(rect, Paint()..shader = gradient.createShader(rect));
+
     final gridPaint = Paint()
       ..color = Colors.white.withOpacity(0.02)
       ..strokeWidth = 0.5;

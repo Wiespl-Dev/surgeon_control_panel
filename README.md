@@ -20,3 +20,6 @@ samples, guidance on mobile development, and a full API reference.
 https://scp.server.wiespl.com/
 
 mgps - red, green ,yello
+
+
+_startStatusRequestTimer

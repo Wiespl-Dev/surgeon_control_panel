@@ -6,39 +6,63 @@ import 'dart:async';
 import 'dart:typed_data';
 
 class GlobalUsbProvider with ChangeNotifier {
-  // USB Connection
-  UsbPort? _port;
+  // USB Connection - Multiple ports support
+  List<UsbPort> _ports = [];
+  Map<String, UsbPort> _devicePortMap = {};
   String usbStatus = "Disconnected";
   bool isConnected = false;
   String _incomingBuffer = "";
-  StreamSubscription? _inputStreamSubscription;
+  Map<String, StreamSubscription<Uint8List>> _inputStreamSubscriptions = {};
   StreamSubscription<UsbEvent>? _usbEventSubscription;
 
-  UsbDevice? _connectedDevice;
-
-  // CH340/CH341 Device IDs (in DECIMAL)
-  // VID: 0x1A86 = 6790
-  // PID: 0x7523 = 29987
-  static const int CH340_VID = 6790;
-  static const int CH340_PID = 29987;
+  static final List<Map<String, int>> _supportedDevices = [
+    // CH340/CH341 Devices
+    {'vid': 6790, 'pid': 29987}, // 0x1A86, 0x7523 - CH340
+    {'vid': 6790, 'pid': 29986}, // CH340 variant
+    {'vid': 6790, 'pid': 29985}, // CH340 variant
+    // CH343 Devices - EXPANDED LIST
+    {'vid': 6790, 'pid': 29989}, // CH343
+    {'vid': 6790, 'pid': 29990}, // CH343 variant
+    {'vid': 6790, 'pid': 29991}, // CH343 variant
+    {'vid': 6790, 'pid': 29992}, // CH343G
+    {'vid': 6790, 'pid': 21971},
+    {'vid': 6790, 'pid': 29993}, // CH343 variant
+    {'vid': 6790, 'pid': 29994}, // CH343 variant
+    {'vid': 6790, 'pid': 29995}, // CH343 variant
+    {'vid': 6790, 'pid': 29996}, // CH343 variant
+    // FTDI Devices
+    {'vid': 1027, 'pid': 24577}, // FT232R
+    {'vid': 1027, 'pid': 24592}, // FT232H
+    {'vid': 1027, 'pid': 24596}, // FT2232H
+    {'vid': 1027, 'pid': 24600}, // FT4232H
+    // Prolific Devices
+    {'vid': 1659, 'pid': 8963}, // PL2303
+    {'vid': 1659, 'pid': 36880}, // PL2303GC
+    // CP210x Devices
+    {'vid': 4292, 'pid': 60000}, // CP2102
+    {'vid': 4292, 'pid': 60001}, // CP2102
+    // Arduino Devices
+    {'vid': 9025, 'pid': 66}, // Arduino Uno
+    {'vid': 9025, 'pid': 67}, // Arduino Mega
+  ];
 
   // Temperature State
   double _pendingTemperature = 25.0;
-  String temp = "--";
-  String _receivedData = ""; // ADD THIS - for GasStatusPage to access
+  String _temp = "--";
+  String _receivedData = "";
   // Humidity State
   double _pendingHumidity = 50.0;
-  String humidity = "--";
+  String _humidity = "--";
 
   // Light State
   List<int> _lightIntensities = List.filled(7, 0);
   List<bool> _lightStates = List.filled(7, false);
   bool _nightMode = false;
 
-  // System Status (from HomeProvider)
+  // System Status
   bool _isSwitched = false;
 
-  // HEPA Status (from HomeProvider)
+  // HEPA Status
   bool _isHepaHealthy = true;
   String _hepaStatusText = "HEPA Healthy";
 
@@ -65,40 +89,46 @@ class GlobalUsbProvider with ChangeNotifier {
   Timer? _statusRequestTimer;
   bool _manualDisconnect = false;
   static const Duration _reconnectInterval = Duration(seconds: 5);
-  static const Duration _statusRequestInterval = Duration(seconds: 10);
+  static const Duration _statusRequestInterval = Duration(
+    seconds: 3,
+  ); // Reduced for faster updates
 
   // Command protection
   DateTime? _lastCommandTime;
   static const Duration _commandCooldown = Duration(milliseconds: 500);
   bool _isSendingCommand = false;
 
-  // Getters
+  // Multi-port management
+  String? _activeDeviceId;
+  List<UsbDevice> _availableDevices = [];
+
+  // Data update tracking
+  int _dataUpdateCount = 0;
+
+  // Getters - FIXED: Added proper getters for all UI properties
   double get pendingTemperature => _pendingTemperature;
-  String get currentTemperature => temp;
+  String get currentTemperature => _temp;
   double get pendingHumidity => _pendingHumidity;
-  String get currentHumidity => humidity;
+  String get currentHumidity => _humidity;
   List<int> get lightIntensities => _lightIntensities;
   List<bool> get lightStates => _lightStates;
   bool get nightMode => _nightMode;
   bool get allLightsState => _lightStates.any((state) => state);
   String get receivedData => _receivedData;
-  // HomeProvider Getters
   bool get isSwitched => _isSwitched;
   bool get isHepaHealthy => _isHepaHealthy;
   String get hepaStatusText => _hepaStatusText;
-
-  // OR Status Provider Getters
   bool get defumigation => _defumigation;
   bool get orNightMode => _orNightMode;
   int get pressure1 => _pressure1;
   bool get isPressurePositive => _isPressurePositive;
-
-  // Audio Getters
+  List<UsbDevice> get availableDevices => _availableDevices;
+  String? get activeDeviceId => _activeDeviceId;
   AudioPlayer get audioPlayer => _audioPlayer;
   bool get isMuted => _isMuted;
   bool get isAlertPlaying => _isAlertPlaying;
 
-  // Initialize shared preferences - CALL THIS ONLY ONCE
+  // Initialize shared preferences
   Future<void> initSharedPreferences() async {
     if (_isInitialized) {
       print("GlobalUsbProvider already initialized, skipping...");
@@ -108,9 +138,379 @@ class GlobalUsbProvider with ChangeNotifier {
     _prefs = await SharedPreferences.getInstance();
     await _loadSavedValues();
     _isInitialized = true;
-    notifyListeners(); // Notify after loading values
+
+    // Start USB monitoring immediately after initialization
+    startUsbMonitoring();
+
+    notifyListeners();
     print("GlobalUsbProvider initialized successfully");
   }
+
+  // Enhanced USB Monitoring with better debugging
+  void startUsbMonitoring() {
+    print("🚀 Starting USB Monitoring...");
+
+    // 1. Initial connection attempt
+    initUsb();
+
+    // 2. Start listening for USB events with better error handling
+    _usbEventSubscription?.cancel();
+
+    if (UsbSerial.usbEventStream == null) {
+      print(
+        "❌ USB Event Stream is null - USB monitoring may not work properly",
+      );
+      // Fallback: use periodic scanning instead
+      _startPeriodicScanning();
+      return;
+    }
+
+    _usbEventSubscription = UsbSerial.usbEventStream!.listen(
+      (UsbEvent event) {
+        print(
+          "🔌 USB Event: ${event.event} - Device: ${event.device?.deviceName ?? 'Unknown'}",
+        );
+
+        if (event.event == UsbEvent.ACTION_USB_ATTACHED) {
+          print(
+            "📱 USB Device Attached - VID: ${event.device?.vid}, PID: ${event.device?.pid}",
+          );
+          Future.delayed(const Duration(seconds: 2), () {
+            if (!isConnected && !_manualDisconnect) {
+              print("🔄 USB ATTACHED: Attempting connection...");
+              initUsb();
+            }
+          });
+        } else if (event.event == UsbEvent.ACTION_USB_DETACHED) {
+          final deviceId = _getDeviceId(event.device);
+          print("📵 USB Device Detached: $deviceId");
+          if (_devicePortMap.containsKey(deviceId)) {
+            _handleConnectionLoss(deviceId);
+          }
+        }
+      },
+      onError: (error) {
+        print("❌ USB Event Stream Error: $error");
+        _startPeriodicScanning(); // Fallback to periodic scanning
+      },
+      cancelOnError: false,
+    );
+
+    // 3. Start auto-reconnect as fallback
+    _startAutoReconnectTimer();
+  }
+
+  // Fallback periodic scanning if event stream fails
+  void _startPeriodicScanning() {
+    print("🔄 Starting periodic USB scanning...");
+    Timer.periodic(const Duration(seconds: 10), (timer) {
+      if (!isConnected && !_manualDisconnect) {
+        print("⏰ Periodic scan: Checking for USB devices...");
+        initUsb();
+      }
+    });
+  }
+
+  // Enhanced USB initialization with comprehensive debugging
+  Future<void> initUsb({int retry = 0}) async {
+    try {
+      print("🔄 initUsb called (attempt ${retry + 1})");
+
+      if (isConnected && _ports.isNotEmpty) {
+        print("ℹ️ Already connected, skipping...");
+        return;
+      }
+
+      usbStatus = "Scanning for USB devices... (attempt ${retry + 1})";
+      notifyListeners();
+
+      // Give time for system to recognize new devices
+      if (retry == 0) {
+        await Future.delayed(const Duration(milliseconds: 1000));
+      }
+
+      print("🔍 Listing USB devices...");
+      List<UsbDevice> devices = await UsbSerial.listDevices();
+      print("📋 Found ${devices.length} total USB devices");
+
+      // Log all devices for debugging
+      for (var device in devices) {
+        print(
+          "🔧 Device: ${device.deviceName} - VID: ${device.vid}, PID: ${device.pid}, Supported: ${_isDeviceSupported(device)}",
+        );
+      }
+
+      _availableDevices = devices.where(_isDeviceSupported).toList();
+      print("✅ Found ${_availableDevices.length} supported USB devices");
+
+      if (_availableDevices.isEmpty) {
+        if (retry < 3) {
+          print("⚠️ No supported devices found, retrying in 2 seconds...");
+          await Future.delayed(const Duration(seconds: 2));
+          return initUsb(retry: retry + 1);
+        }
+        usbStatus = "No supported USB devices found";
+        isConnected = false;
+        notifyListeners();
+        _startAutoReconnectTimer();
+        return;
+      }
+
+      // Try to connect to all supported devices
+      bool anyConnected = false;
+      for (var device in _availableDevices) {
+        final deviceId = _getDeviceId(device);
+        print(
+          "🔌 Attempting to connect to: ${_getDeviceDisplayName(device)} ($deviceId)",
+        );
+
+        try {
+          final port = await device.create();
+          if (port == null) {
+            print("❌ Failed to create port for device: $deviceId");
+            continue;
+          }
+
+          await Future.delayed(const Duration(milliseconds: 500));
+
+          print("🔓 Attempting to open port...");
+          bool open = await port.open();
+
+          if (!open) {
+            print("❌ Failed to open port for device: $deviceId");
+            port.close();
+            continue;
+          }
+
+          await Future.delayed(const Duration(milliseconds: 200));
+
+          // Configure port settings
+          await port.setDTR(true);
+          await port.setRTS(true);
+          await port.setPortParameters(
+            9600,
+            8,
+            1,
+            0,
+          ); // <-- just call it directly
+
+          _ports.add(port);
+          _devicePortMap[deviceId] = port;
+
+          // Set up input stream listener
+          print("🎧 Setting up input stream for: $deviceId");
+          _inputStreamSubscriptions[deviceId] = port.inputStream!.listen(
+            (data) => _onDataReceived(data, deviceId),
+            onError: (error) {
+              print("❌ Stream error for $deviceId: $error");
+              _handleConnectionLoss(deviceId);
+            },
+            onDone: () {
+              print("📴 Stream closed for device: $deviceId");
+              _handleConnectionLoss(deviceId);
+            },
+            cancelOnError: false,
+          );
+
+          anyConnected = true;
+          print(
+            "✅ Successfully connected to: ${_getDeviceDisplayName(device)}",
+          );
+        } catch (e) {
+          print("❌ Connection error for ${_getDeviceDisplayName(device)}: $e");
+        }
+      }
+
+      if (anyConnected) {
+        // Set active device
+        if (_activeDeviceId != null &&
+            _devicePortMap.containsKey(_activeDeviceId)) {
+          print("🎯 Using previously active device: $_activeDeviceId");
+        } else if (_devicePortMap.isNotEmpty) {
+          _activeDeviceId = _devicePortMap.keys.first;
+          _prefs.setString('last_connected_device', _activeDeviceId!);
+          print("🎯 Set active device to: $_activeDeviceId");
+        }
+
+        isConnected = true;
+        _manualDisconnect = false;
+        usbStatus = "Connected to ${_devicePortMap.length} device(s)";
+
+        _reconnectTimer?.cancel();
+        // _startStatusRequestTimer();
+
+        print("🎉 USB Connection established successfully!");
+
+        // Send initial status request
+        Future.delayed(const Duration(seconds: 1), () {
+          sendCompleteStructure();
+        });
+      } else {
+        usbStatus = "Failed to connect to any supported devices";
+        isConnected = false;
+        _cleanupConnection();
+        _startAutoReconnectTimer();
+        print("❌ Failed to establish any USB connections");
+      }
+
+      notifyListeners();
+    } catch (e) {
+      print("💥 USB init error: $e");
+      usbStatus = "Error: $e";
+      isConnected = false;
+      _cleanupConnection();
+      notifyListeners();
+
+      _startAutoReconnectTimer();
+    }
+  }
+
+  // Enhanced device detection methods
+  String _getDeviceId(UsbDevice? device) {
+    if (device == null) return 'unknown';
+    return '${device.vid}:${device.pid}:${device.deviceId}';
+  }
+
+  bool _isDeviceSupported(UsbDevice device) {
+    bool supported = _supportedDevices.any(
+      (supportedDevice) =>
+          device.vid == supportedDevice['vid'] &&
+          device.pid == supportedDevice['pid'],
+    );
+
+    if (supported) {
+      print(
+        "👍 Device supported: ${device.vid}:${device.pid} - ${_getDeviceDisplayName(device)}",
+      );
+    } else {
+      print("👎 Device NOT supported: ${device.vid}:${device.pid}");
+    }
+
+    return supported;
+  }
+
+  String _getDeviceDisplayName(UsbDevice device) {
+    // CH340/CH341
+    if (device.vid == 6790 && [29987, 29986, 29985].contains(device.pid)) {
+      return "CH340 Serial Converter";
+    }
+    // CH343
+    else if (device.vid == 6790 &&
+        device.pid! >= 29989 &&
+        device.pid! <= 29996) {
+      return "CH343 Serial Converter";
+    }
+    // FTDI
+    else if (device.vid == 1027) {
+      switch (device.pid) {
+        case 24577:
+          return "FTDI FT232R";
+        case 24592:
+          return "FTDI FT232H";
+        case 24596:
+          return "FTDI FT2232H";
+        case 24600:
+          return "FTDI FT4232H";
+        default:
+          return "FTDI USB-Serial";
+      }
+    }
+    // Prolific
+    else if (device.vid == 1659) {
+      return "Prolific PL2303";
+    }
+    // CP210x
+    else if (device.vid == 4292) {
+      return "CP210x Serial Converter";
+    }
+    // Arduino
+    else if (device.vid == 9025) {
+      return "Arduino Board";
+    }
+    // Generic
+    else {
+      return "USB Serial (${device.vid}:${device.pid})";
+    }
+  }
+
+  void _handleConnectionLoss([String? deviceId]) {
+    print("🔌 Handling connection loss for: ${deviceId ?? 'all devices'}");
+
+    if (deviceId != null) {
+      _cleanupConnection(deviceId);
+
+      if (_devicePortMap.isEmpty) {
+        isConnected = false;
+        usbStatus = "All connections lost, reconnecting...";
+        if (!_manualDisconnect) {
+          _startAutoReconnectTimer();
+        }
+      } else {
+        if (_activeDeviceId == deviceId) {
+          _activeDeviceId = _devicePortMap.keys.first;
+          usbStatus = "Switched to backup device";
+          print("🔄 Switched active device to: $_activeDeviceId");
+        }
+      }
+    } else {
+      isConnected = false;
+      usbStatus = "Connection lost, reconnecting...";
+      _cleanupConnection();
+      if (!_manualDisconnect) {
+        _startAutoReconnectTimer();
+      }
+    }
+
+    notifyListeners();
+  }
+
+  void _cleanupConnection([String? deviceId]) {
+    if (deviceId != null) {
+      // Cleanup specific device
+      _inputStreamSubscriptions[deviceId]?.cancel();
+      _inputStreamSubscriptions.remove(deviceId);
+
+      final port = _devicePortMap[deviceId];
+      port?.close();
+      _devicePortMap.remove(deviceId);
+      _ports.remove(port);
+
+      if (_activeDeviceId == deviceId) {
+        _activeDeviceId = null;
+      }
+    } else {
+      // Cleanup all connections
+      _inputStreamSubscriptions.forEach((key, subscription) {
+        subscription.cancel();
+      });
+      _inputStreamSubscriptions.clear();
+
+      _ports.forEach((port) => port.close());
+      _ports.clear();
+      _devicePortMap.clear();
+      _activeDeviceId = null;
+    }
+  }
+
+  void _startAutoReconnectTimer() {
+    _reconnectTimer?.cancel();
+    _reconnectTimer = Timer.periodic(_reconnectInterval, (_) {
+      if (!isConnected && !_manualDisconnect) {
+        print("🔄 Auto-reconnect: Attempting connection...");
+        initUsb();
+      }
+    });
+  }
+
+  // void _startStatusRequestTimer() {
+  //   _statusRequestTimer?.cancel();
+  //   _statusRequestTimer = Timer.periodic(_statusRequestInterval, (_) {
+  //     if (isConnected && _activeDeviceId != null) {
+  //       print("📊 Periodic status request...");
+  //       sendCompleteStructure();
+  //     }
+  //   });
+  // }
 
   // Audio Methods
   void toggleMute() {
@@ -130,46 +530,13 @@ class GlobalUsbProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  // Function to start active USB monitoring
-  void startUsbMonitoring() {
-    // 1. Initial connection attempt (will trigger permission dialog if needed)
-    initUsb();
-
-    // 2. Start listening for USB connect/disconnect events
-    _usbEventSubscription?.cancel(); // Cancel any previous subscription
-    _usbEventSubscription = UsbSerial.usbEventStream!.listen((UsbEvent event) {
-      print(
-        "USB Event received: ${event.event} for device ${event.device?.deviceName}",
-      );
-      if (event.event == UsbEvent.ACTION_USB_ATTACHED) {
-        // Device attached - trigger connection attempt
-        Future.delayed(const Duration(seconds: 1), () {
-          if (!isConnected && !_manualDisconnect) {
-            print("USB ATTACHED event: Attempting connection...");
-            initUsb();
-          }
-        });
-      } else if (event.event == UsbEvent.ACTION_USB_DETACHED) {
-        // Device detached - handle connection loss if it was our port
-        if (_connectedDevice != null &&
-            event.device?.deviceName == _connectedDevice!.deviceName) {
-          print("USB DETACHED event: Handling connection loss...");
-          _handleConnectionLoss();
-        }
-      }
-    });
-
-    // 3. Ensure the auto-reconnect timer is running as a fallback
-    _startAutoReconnectTimer();
-  }
-
   Future<void> _loadSavedValues() async {
     // Temperature
-    temp = _prefs.getString('current_temperature') ?? "--";
+    _temp = _prefs.getString('current_temperature') ?? "--";
     _pendingTemperature = _prefs.getDouble('setpoint_temperature') ?? 25.0;
 
     // Humidity
-    humidity = _prefs.getString('current_humidity') ?? "--";
+    _humidity = _prefs.getString('current_humidity') ?? "--";
     _pendingHumidity = _prefs.getDouble('setpoint_humidity') ?? 50.0;
 
     // System Status
@@ -179,7 +546,7 @@ class GlobalUsbProvider with ChangeNotifier {
     _defumigation = _prefs.getBool('or_defumigation') ?? false;
     _orNightMode = _prefs.getBool('or_night_mode') ?? false;
 
-    // Lights - Load with detailed logging
+    // Lights
     List<String>? intensityStrings = _prefs.getStringList('light_intensities');
     List<String>? stateStrings = _prefs.getStringList('light_states');
 
@@ -202,8 +569,11 @@ class GlobalUsbProvider with ChangeNotifier {
     // Load HEPA status
     refreshHepaStatus();
 
+    // Load last connected device
+    _activeDeviceId = _prefs.getString('last_connected_device');
+
     print(
-      "Loaded saved values - Temp: $temp/$_pendingTemperature, Humidity: $humidity/$_pendingHumidity, System: $_isSwitched, Lights: $_lightStates",
+      "Loaded saved values - Temp: $_temp/$_pendingTemperature, Humidity: $_humidity/$_pendingHumidity",
     );
   }
 
@@ -234,7 +604,6 @@ class GlobalUsbProvider with ChangeNotifier {
     await _prefs.setStringList('light_states', stateStrings);
   }
 
-  // OR Status Provider Save Methods
   void _saveORStatusSettings() async {
     await _prefs.setBool('or_defumigation', _defumigation);
     await _prefs.setBool('or_night_mode', _orNightMode);
@@ -252,7 +621,7 @@ class GlobalUsbProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  // System Status Methods (from HomeProvider)
+  // System Status Methods
   void updateSystemStatus(bool status) {
     _isSwitched = status;
     _prefs.setBool('system_switched', status);
@@ -274,22 +643,25 @@ class GlobalUsbProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  // Sensor Data Methods (from HomeProvider)
+  // Sensor Data Methods - FIXED: Added proper notifyListeners()
   void updateTemperature(String temp) {
-    this.temp = temp;
+    final oldValue = _temp;
+    _temp = temp;
     _saveCurrentTemperature(temp);
-    notifyListeners();
+    print("🌡️ Temperature updated: $oldValue → $_temp");
+    notifyListeners(); // CRITICAL: This was missing!
   }
 
   void updateHumidity(String humidity) {
-    this.humidity = humidity;
+    final oldValue = _humidity;
+    _humidity = humidity;
     _saveCurrentHumidity(humidity);
-    notifyListeners();
+    print("💧 Humidity updated: $oldValue → $_humidity");
+    notifyListeners(); // CRITICAL: This was missing!
   }
 
-  // HEPA Status Methods (from HomeProvider)
+  // HEPA Status Methods
   void refreshHepaStatus() {
-    // Read the fault bit from SharedPreferences
     final faultBit = _prefs.getString('F_Sensor_10_FAULT_BIT') ?? '0';
     _isHepaHealthy = faultBit == '0';
     _hepaStatusText = _isHepaHealthy ? "HEPA Healthy" : "HEPA Fault";
@@ -312,7 +684,7 @@ class GlobalUsbProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  // Light methods - ALWAYS save when changing lights
+  // Light methods
   void handleLightChange(int lightIndex, bool? turnOn, int? intensity) {
     if (turnOn != null) {
       _lightStates[lightIndex] = turnOn;
@@ -367,172 +739,13 @@ class GlobalUsbProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  void _cleanupConnection() {
-    _inputStreamSubscription?.cancel();
-    _inputStreamSubscription = null;
-    _statusRequestTimer?.cancel();
-    _statusRequestTimer = null;
-    _port?.close();
-    _port = null;
-    // Clear the stored connected device
-    _connectedDevice = null;
-  }
-
-  Future<void> initUsb({int retry = 0}) async {
-    try {
-      if (isConnected && _port != null) {
-        return;
-      }
-
-      _cleanupConnection();
-
-      usbStatus = "Scanning for USB devices... (attempt ${retry + 1})";
-      notifyListeners();
-
-      if (retry == 0) {
-        await Future.delayed(const Duration(milliseconds: 500));
-      }
-
-      List<UsbDevice> devices = await UsbSerial.listDevices();
-
-      if (devices.isEmpty) {
-        if (retry < 5) {
-          await Future.delayed(const Duration(milliseconds: 500));
-          return initUsb(retry: retry + 1);
-        }
-        usbStatus = "No USB devices found";
-        isConnected = false;
-        notifyListeners();
-        _startAutoReconnectTimer();
-        return;
-      }
-
-      // Explicitly look for the CH340 serial device
-      UsbDevice? targetDevice;
-      for (var device in devices) {
-        if (device.vid == CH340_VID && device.pid == CH340_PID) {
-          targetDevice = device;
-          break;
-        }
-      }
-
-      if (targetDevice == null) {
-        usbStatus = "CH340 serial device not found.";
-        isConnected = false;
-        notifyListeners();
-        _startAutoReconnectTimer();
-        return;
-      }
-
-      UsbDevice device = targetDevice;
-
-      _port = await device.create();
-      _connectedDevice = device;
-
-      if (_port == null) {
-        throw "Failed to create USB port";
-      }
-
-      await Future.delayed(const Duration(milliseconds: 300));
-
-      // CRITICAL: This attempts to open the port and triggers the permission dialog
-      bool open = await _port!.open();
-
-      if (!open) {
-        _cleanupConnection();
-        usbStatus = "Awaiting USB Permission or device busy. Retrying soon...";
-        isConnected = false;
-        notifyListeners();
-
-        // Wait 2 seconds for the OS to process the permission grant/device setup.
-        Future.delayed(const Duration(seconds: 2), () {
-          if (!isConnected && !_manualDisconnect) {
-            initUsb(); // Force an immediate retry now
-          }
-        });
-
-        _startAutoReconnectTimer();
-        return;
-      }
-
-      await Future.delayed(const Duration(milliseconds: 100));
-      await _port!.setDTR(true);
-      await _port!.setRTS(true);
-      await _port!.setPortParameters(9600, 8, 1, 0);
-
-      usbStatus = "Connected to ${device.deviceName}";
-      isConnected = true;
-      _manualDisconnect = false;
-      notifyListeners();
-
-      // Cancel any pending reconnect timers
-      _reconnectTimer?.cancel();
-
-      // Set up input stream listener with proper error handling
-      _inputStreamSubscription = _port!.inputStream?.listen(
-        _onDataReceived,
-        onError: (error) {
-          print("Stream error: $error");
-          _handleConnectionLoss();
-        },
-        onDone: () {
-          print("Stream closed by device");
-          _handleConnectionLoss();
-        },
-        cancelOnError: false,
-      );
-
-      await Future.delayed(const Duration(milliseconds: 500));
-
-      // Start periodic status requests
-      _startStatusRequestTimer();
-    } catch (e) {
-      print("USB init error: $e");
-      usbStatus = "Error: $e";
-      isConnected = false;
-      _cleanupConnection();
-      notifyListeners();
-
-      _startAutoReconnectTimer();
-    }
-  }
-
-  void _handleConnectionLoss() {
-    isConnected = false;
-    usbStatus = "Connection lost, reconnecting...";
-    _cleanupConnection();
-    notifyListeners();
-    if (!_manualDisconnect) {
-      _startAutoReconnectTimer();
-    }
-  }
-
-  void _startAutoReconnectTimer() {
-    _reconnectTimer?.cancel();
-    _reconnectTimer = Timer.periodic(_reconnectInterval, (_) {
-      if (!isConnected && !_manualDisconnect) {
-        initUsb();
-      }
-    });
-  }
-
-  void _startStatusRequestTimer() {
-    _statusRequestTimer?.cancel();
-    _statusRequestTimer = Timer.periodic(_statusRequestInterval, (_) {
-      if (isConnected) {
-        // Use sendCompleteStructure to periodically request status by sending
-        // a full command, which often triggers a response with the current state.
-        sendCompleteStructure();
-      }
-    });
-  }
-
-  void _onDataReceived(Uint8List data) {
+  void _onDataReceived(Uint8List data, String deviceId) {
     String str = String.fromCharCodes(data);
+    print("📥 Raw data from $deviceId: ${String.fromCharCodes(data)}");
 
     _incomingBuffer += str;
     _receivedData = _incomingBuffer;
-    // Process complete messages
+
     int newlineIndex;
     while ((newlineIndex = _incomingBuffer.indexOf('\n')) != -1) {
       String completeMessage = _incomingBuffer
@@ -541,40 +754,22 @@ class GlobalUsbProvider with ChangeNotifier {
       _incomingBuffer = _incomingBuffer.substring(newlineIndex + 1);
 
       if (completeMessage.isNotEmpty) {
-        _processCompleteMessage(completeMessage);
+        print("📨 Complete message from $deviceId: $completeMessage");
+        _processCompleteMessage(completeMessage, deviceId);
       }
     }
 
-    // Process JSON-style messages if they are not newline-terminated
     if (_incomingBuffer.startsWith('{') && _incomingBuffer.endsWith('}')) {
-      _processCompleteMessage(_incomingBuffer);
+      print("📨 JSON message from $deviceId: $_incomingBuffer");
+      _processCompleteMessage(_incomingBuffer, deviceId);
       _incomingBuffer = "";
     }
   }
 
-  void _processCompleteMessage(String completeMessage) {
+  void _processCompleteMessage(String completeMessage, String deviceId) {
     lastReceivedValue = completeMessage;
+    print("🎯 Processing message from $deviceId: $completeMessage");
     _parseStructuredData(completeMessage);
-  }
-
-  // Helper method for pressure sign
-  int _applySign(String rawValue, String? signBit) {
-    int val = int.tryParse(rawValue) ?? 0;
-    if (signBit == null) return val;
-    if (signBit == '1') {
-      return val;
-    } else {
-      return -val;
-    }
-  }
-
-  // Helper method to log value changes
-  void _logValueChanges(String type, String oldValue, String newValue) {
-    if (oldValue != newValue) {
-      print("🔄 $type changed: $oldValue → $newValue");
-    } else {
-      print("✅ $type unchanged: $oldValue");
-    }
   }
 
   void _parseStructuredData(String data) async {
@@ -598,176 +793,139 @@ class GlobalUsbProvider with ChangeNotifier {
         // Save Fault Bits immediately
         if (key.startsWith('F_Sensor_') && key.endsWith('_FAULT_BIT')) {
           try {
-            if (_prefs != null) await _prefs!.setString(key, value);
+            await _prefs.setString(key, value);
           } catch (e) {
             print("❌ Failed to save fault bit $key: $e");
           }
         }
       }
 
-      final originalTemp = temp;
-      final originalHumidity = humidity;
-      final originalPendingTemp = _pendingTemperature;
-      final originalPendingHumidity = _pendingHumidity;
+      bool dataChanged = false;
 
-      double? _parseScaledValue(
-        String raw,
-        double min,
-        double max,
-        String label,
-      ) {
-        try {
-          final value = int.parse(raw) / 10.0;
-          if (value >= min - 1 && value <= max + 1) return value;
-          print("⚠️ $label out of range: $value");
-        } catch (e) {
-          print("❌ Error parsing $label: $e");
-        }
-        return null;
-      }
-
-      void _logValueChanges(String label, dynamic oldVal, dynamic newVal) {
-        if (oldVal.toString() != newVal.toString()) {
-          print("🔄 $label changed: $oldVal → $newVal");
-        }
-      }
-
-      double _applySign(String value, String? signBit) {
-        try {
-          final doubleVal = double.parse(value) / 10.0;
-          return (signBit == '1') ? doubleVal : -doubleVal;
-        } catch (e) {
-          print("❌ Error applying sign: $e");
-          return 0.0;
-        }
-      }
-
-      // 🌡️ Temperature (Current)
+      // Temperature (Current)
       if (parsedData.containsKey('C_OT_TEMP')) {
         final raw = parsedData['C_OT_TEMP'].toString();
-        print("🔧 RAW C_OT_TEMP: '$raw'");
         final parsed = _parseScaledValue(raw, 15.0, 35.0, "Temperature");
         if (parsed != null) {
-          final old = temp;
-          temp = parsed.toStringAsFixed(1);
-          _logValueChanges("Temperature", old, temp);
-          _saveCurrentTemperature(temp);
-        } else {
-          print("⚠️ Keeping old temperature: $originalTemp");
-        }
-      } else {
-        print("❌ C_OT_TEMP key not found");
-      }
-
-      // 🌡️ Temperature Setpoint
-      if (parsedData.containsKey('S_TEMP_SETPT')) {
-        final raw = parsedData['S_TEMP_SETPT'].toString();
-        print("🔧 RAW S_TEMP_SETPT: '$raw'");
-        final parsed = _parseScaledValue(raw, 15.0, 35.0, "Set Temperature");
-        if (parsed != null) {
-          final old = _pendingTemperature;
-          _pendingTemperature = parsed;
-          print("✅ Parsed S_TEMP_SETPT: $old → $_pendingTemperature°C");
-          _saveSetpointTemperature(_pendingTemperature);
-        } else {
-          print("⚠️ Keeping old set temperature: $originalPendingTemp");
-        }
-      } else {
-        print("❌ S_TEMP_SETPT key not found");
-      }
-
-      // 💧 Humidity (Current)
-      if (parsedData.containsKey('C_RH')) {
-        final raw = parsedData['C_RH'].toString();
-        print("🔧 RAW C_RH: '$raw'");
-        final parsed = _parseScaledValue(raw, 0.0, 100.0, "Humidity");
-        if (parsed != null) {
-          final old = humidity;
-          humidity = parsed.toStringAsFixed(1);
-          _logValueChanges("Humidity", old, humidity);
-          _saveCurrentHumidity(humidity);
-        } else {
-          print("⚠️ Keeping old humidity: $originalHumidity");
-        }
-      } else {
-        print("❌ C_RH key not found");
-      }
-
-      // 💧 Humidity Setpoint
-      if (parsedData.containsKey('S_RH_SETPT')) {
-        final raw = parsedData['S_RH_SETPT'].toString();
-        print("🔧 RAW S_RH_SETPT: '$raw'");
-        final parsed = _parseScaledValue(raw, 0.0, 100.0, "Set Humidity");
-        if (parsed != null) {
-          final old = _pendingHumidity;
-          _pendingHumidity = parsed;
-          print("✅ Parsed S_RH_SETPT: $old → $_pendingHumidity%");
-          _saveSetpointHumidity(_pendingHumidity);
-        } else {
-          print("⚠️ Keeping old set humidity: $originalPendingHumidity");
-        }
-      } else {
-        print("❌ S_RH_SETPT key not found");
-      }
-
-      // 🔵 Pressure
-      if (parsedData.containsKey('C_PRESSURE_1')) {
-        final sign = parsedData['C_PRESSURE_1_SIGN_BIT'];
-        _pressure1 = _applySign(
-          parsedData['C_PRESSURE_1'] ?? '0',
-          sign,
-        ).toInt();
-        _isPressurePositive = sign == '1';
-        print(
-          "✅ Parsed Pressure: $_pressure1 (${_isPressurePositive ? '+' : '-'})",
-        );
-      }
-
-      // 💡 OR Status Lights (8–10)
-      for (int i = 8; i <= 10; i++) {
-        final key = 'S_Light_${i}_ON_OFF';
-        if (parsedData.containsKey(key)) {
-          final on = parsedData[key] == '1';
-          try {
-            if (_prefs != null) {
-              if (i == 8) {
-                _orNightMode = on;
-                await _prefs!.setBool('or_night_mode', on);
-              } else if (i == 9) {
-                _defumigation = on;
-                await _prefs!.setBool('or_defumigation', on);
-              } else if (i == 10 && _isSwitched != on) {
-                _isSwitched = on;
-                await _prefs!.setBool('system_switched', on);
-              }
-            }
-          } catch (e) {
-            print("❌ Failed to persist OR light $i: $e");
+          final old = _temp;
+          _temp = parsed.toStringAsFixed(1);
+          if (old != _temp) {
+            print("🌡️ Temperature changed: $old → $_temp");
+            _saveCurrentTemperature(_temp);
+            dataChanged = true;
           }
         }
       }
 
-      // 💡 Regular Lights (1–7)
+      // Temperature Setpoint
+      if (parsedData.containsKey('S_TEMP_SETPT')) {
+        final raw = parsedData['S_TEMP_SETPT'].toString();
+        final parsed = _parseScaledValue(raw, 15.0, 35.0, "Set Temperature");
+        if (parsed != null) {
+          final old = _pendingTemperature;
+          _pendingTemperature = parsed;
+          if (old != _pendingTemperature) {
+            print("🎯 Set Temperature changed: $old → $_pendingTemperature°C");
+            _saveSetpointTemperature(_pendingTemperature);
+            dataChanged = true;
+          }
+        }
+      }
+
+      // Humidity (Current)
+      if (parsedData.containsKey('C_RH')) {
+        final raw = parsedData['C_RH'].toString();
+        final parsed = _parseScaledValue(raw, 0.0, 100.0, "Humidity");
+        if (parsed != null) {
+          final old = _humidity;
+          _humidity = parsed.toStringAsFixed(1);
+          if (old != _humidity) {
+            print("💧 Humidity changed: $old → $_humidity");
+            _saveCurrentHumidity(_humidity);
+            dataChanged = true;
+          }
+        }
+      }
+
+      // Humidity Setpoint
+      if (parsedData.containsKey('S_RH_SETPT')) {
+        final raw = parsedData['S_RH_SETPT'].toString();
+        final parsed = _parseScaledValue(raw, 0.0, 100.0, "Set Humidity");
+        if (parsed != null) {
+          final old = _pendingHumidity;
+          _pendingHumidity = parsed;
+          if (old != _pendingHumidity) {
+            print("🎯 Set Humidity changed: $old → $_pendingHumidity%");
+            _saveSetpointHumidity(_pendingHumidity);
+            dataChanged = true;
+          }
+        }
+      }
+
+      // Pressure
+      if (parsedData.containsKey('C_PRESSURE_1')) {
+        final sign = parsedData['C_PRESSURE_1_SIGN_BIT'];
+        final newPressure = _applySign(
+          parsedData['C_PRESSURE_1'] ?? '0',
+          sign,
+        ).toInt();
+        final newIsPositive = sign == '1';
+
+        if (_pressure1 != newPressure || _isPressurePositive != newIsPositive) {
+          _pressure1 = newPressure;
+          _isPressurePositive = newIsPositive;
+          print(
+            "🔵 Pressure: $_pressure1 (${_isPressurePositive ? '+' : '-'})",
+          );
+          dataChanged = true;
+        }
+      }
+
+      // OR Status Lights (8–10)
+      for (int i = 8; i <= 10; i++) {
+        final key = 'S_Light_${i}_ON_OFF';
+        if (parsedData.containsKey(key)) {
+          final on = parsedData[key] == '1';
+          if (i == 8 && _orNightMode != on) {
+            _orNightMode = on;
+            await _prefs.setBool('or_night_mode', on);
+            dataChanged = true;
+          } else if (i == 9 && _defumigation != on) {
+            _defumigation = on;
+            await _prefs.setBool('or_defumigation', on);
+            dataChanged = true;
+          } else if (i == 10 && _isSwitched != on) {
+            _isSwitched = on;
+            await _prefs.setBool('system_switched', on);
+            dataChanged = true;
+          }
+        }
+      }
+
+      // Regular Lights (1–7)
       bool anyLightOn = false;
+      bool lightsChanged = false;
+
       for (int i = 1; i <= 7; i++) {
         final onKey = 'S_Light_${i}_ON_OFF';
         final intensityKey = 'S_Light_${i}_Intensity';
 
         if (parsedData.containsKey(onKey)) {
           final state = parsedData[onKey] == '1';
-          if (i - 1 < _lightStates.length) {
+          if (i - 1 < _lightStates.length && _lightStates[i - 1] != state) {
             _lightStates[i - 1] = state;
             if (state) anyLightOn = true;
-          } else {
-            print("⚠️ Light index out of range: $i");
+            lightsChanged = true;
           }
         }
 
         if (parsedData.containsKey(intensityKey)) {
           try {
             final intensity = int.parse(parsedData[intensityKey].toString());
-            if (i - 1 < _lightIntensities.length) {
+            if (i - 1 < _lightIntensities.length &&
+                _lightIntensities[i - 1] != intensity) {
               _lightIntensities[i - 1] = intensity;
+              lightsChanged = true;
             }
           } catch (e) {
             print("❌ Error parsing $intensityKey: $e");
@@ -775,15 +933,45 @@ class GlobalUsbProvider with ChangeNotifier {
         }
       }
 
-      _nightMode = !anyLightOn;
-      _saveLightSettings();
+      if (lightsChanged) {
+        _nightMode = !anyLightOn;
+        _saveLightSettings();
+        dataChanged = true;
+      }
 
       refreshHepaStatus();
-      notifyListeners();
+
+      // Only notify listeners if data actually changed
+      if (dataChanged) {
+        _dataUpdateCount++;
+        print(
+          "🔄 Data updated (count: $_dataUpdateCount), notifying listeners...",
+        );
+        notifyListeners();
+      } else {
+        print("ℹ️ No data changes detected");
+      }
     } catch (e) {
       print("❌ Error parsing structured data: $e");
       print("❌ Data that caused error: $data");
     }
+  }
+
+  double? _parseScaledValue(String raw, double min, double max, String label) {
+    try {
+      final value = int.parse(raw) / 10.0;
+      if (value >= min - 1 && value <= max + 1) return value;
+      print("⚠️ $label out of range: $value");
+    } catch (e) {
+      print("❌ Error parsing $label: $e");
+    }
+    return null;
+  }
+
+  int _applySign(String rawValue, String? signBit) {
+    int val = int.tryParse(rawValue) ?? 0;
+    if (signBit == null) return val;
+    return signBit == '1' ? val : -val;
   }
 
   // Command protection helper
@@ -800,7 +988,7 @@ class GlobalUsbProvider with ChangeNotifier {
       return false;
     }
 
-    if (_port == null || !isConnected) {
+    if (_ports.isEmpty || !isConnected || _activeDeviceId == null) {
       print("Cannot send - USB not connected");
       return false;
     }
@@ -808,17 +996,18 @@ class GlobalUsbProvider with ChangeNotifier {
     return true;
   }
 
+  // Get active port
+  UsbPort? get _activePort {
+    if (_activeDeviceId == null) return null;
+    return _devicePortMap[_activeDeviceId];
+  }
+
   void sendTemperatureStructure() {
-    if (_port == null || !isConnected) {
-      print("Cannot send - USB not connected");
-      return;
-    }
+    if (!_canSendCommand()) return;
 
     List<String> pairs = [];
-
     pairs.add('SR_WSL:250028');
 
-    // Only send light states and intensities (1-10)
     for (int i = 1; i <= 10; i++) {
       pairs.add('S_Light_${i}_ON_OFF:${getLightState(i)}');
     }
@@ -827,35 +1016,25 @@ class GlobalUsbProvider with ChangeNotifier {
       pairs.add('S_Light_${i}_Intensity:${getLightIntensity(i)}');
     }
 
-    // Temperature setpoint ONLY (modified)
     int tempToSend = (_pendingTemperature * 10).toInt();
     String tempValue = tempToSend.toString().padLeft(3, '0');
     pairs.add('S_TEMP_SETPT:$tempValue');
 
-    // Keep existing humidity setpoint (unchanged)
     int humidityToSend = (_pendingHumidity * 10).toInt();
     String humidityValue = humidityToSend.toString().padLeft(3, '0');
     pairs.add('S_RH_SETPT:$humidityValue');
 
     String command = '{${pairs.join(',')}}\n';
     _sendCommand(command, "TEMPERATURE");
-
-    print(
-      "📤 Sent TEMPERATURE ONLY - setpoint: $_pendingTemperature°C -> $tempValue",
-    );
+    print("📤 Sent TEMPERATURE - setpoint: $_pendingTemperature°C");
   }
 
   void sendHumidityStructure() {
-    if (_port == null || !isConnected) {
-      print("Cannot send - USB not connected");
-      return;
-    }
+    if (!_canSendCommand()) return;
 
     List<String> pairs = [];
-
     pairs.add('SR_WSL:250028');
 
-    // Only send light states and intensities (1-10)
     for (int i = 1; i <= 10; i++) {
       pairs.add('S_Light_${i}_ON_OFF:${getLightState(i)}');
     }
@@ -864,36 +1043,25 @@ class GlobalUsbProvider with ChangeNotifier {
       pairs.add('S_Light_${i}_Intensity:${getLightIntensity(i)}');
     }
 
-    // Keep existing temperature setpoint (unchanged)
     int tempToSend = (_pendingTemperature * 10).toInt();
     String tempValue = tempToSend.toString().padLeft(3, '0');
     pairs.add('S_TEMP_SETPT:$tempValue');
 
-    // Humidity setpoint ONLY (modified)
     int humidityToSend = (_pendingHumidity * 10).toInt();
     String humidityValue = humidityToSend.toString().padLeft(3, '0');
     pairs.add('S_RH_SETPT:$humidityValue');
 
     String command = '{${pairs.join(',')}}\n';
     _sendCommand(command, "HUMIDITY");
-
-    print(
-      "📤 Sent HUMIDITY ONLY - setpoint: $_pendingHumidity% -> $humidityValue",
-    );
+    print("📤 Sent HUMIDITY - setpoint: $_pendingHumidity%");
   }
 
-  // Keep the original complete structure for reference
   void sendCompleteStructure() {
-    if (_port == null || !isConnected) {
-      print("Cannot send - USB not connected");
-      return;
-    }
+    if (!_canSendCommand()) return;
 
     List<String> pairs = [];
-
     pairs.add('SR_WSL:250028');
 
-    // Only send light states and intensities (1-10)
     for (int i = 1; i <= 10; i++) {
       pairs.add('S_Light_${i}_ON_OFF:${getLightState(i)}');
     }
@@ -902,7 +1070,6 @@ class GlobalUsbProvider with ChangeNotifier {
       pairs.add('S_Light_${i}_Intensity:${getLightIntensity(i)}');
     }
 
-    // Both setpoints
     int tempToSend = (_pendingTemperature * 10).toInt();
     String tempValue = tempToSend.toString().padLeft(3, '0');
     pairs.add('S_TEMP_SETPT:$tempValue');
@@ -913,6 +1080,7 @@ class GlobalUsbProvider with ChangeNotifier {
 
     String command = '{${pairs.join(',')}}\n';
     _sendCommand(command, "COMPLETE");
+    print("📤 Sent COMPLETE structure");
   }
 
   // Helper methods
@@ -933,17 +1101,19 @@ class GlobalUsbProvider with ChangeNotifier {
     if (index >= 1 && index <= 7) {
       return _lightIntensities[index - 1].toString().padLeft(3, '0');
     } else if (index == 8) {
-      return _orNightMode ? '080' : '000'; // Match your example
+      return _orNightMode ? '080' : '000';
     } else if (index == 9) {
-      return _defumigation ? '090' : '000'; // Match your example
+      return _defumigation ? '090' : '000';
     } else if (index == 10) {
-      return _isSwitched ? '050' : '000'; // Match your example
+      return _isSwitched ? '050' : '000';
     }
     return '000';
   }
 
   void _sendCommand(String command, String type) {
-    _port!.write(Uint8List.fromList(command.codeUnits));
+    if (_activePort == null) return;
+
+    _activePort!.write(Uint8List.fromList(command.codeUnits));
     lastSentMessage = command.trim();
 
     if (type == "TEMPERATURE") {
@@ -958,69 +1128,128 @@ class GlobalUsbProvider with ChangeNotifier {
     _saveLightSettings();
     _saveORStatusSettings();
 
-    print("📤 Sent $type command: ${command.trim()}");
+    print("📤 Sent $type command to $_activeDeviceId: ${command.trim()}");
     notifyListeners();
   }
 
+  // Manual reconnect method
   void reconnectUsb() {
+    print("🔄 Manual reconnect requested");
     _manualDisconnect = false;
     _reconnectTimer?.cancel();
     isConnected = false;
     _cleanupConnection();
-    initUsb();
+
+    Future.delayed(const Duration(seconds: 1), () {
+      initUsb();
+    });
+  }
+
+  // Test USB communication
+  void testUsbCommunication() {
+    if (!isConnected) {
+      print("❌ Cannot test - USB not connected");
+      return;
+    }
+
+    print("🧪 Testing USB communication...");
+    sendCompleteStructure();
+
+    if (_activePort != null) {
+      String testCommand = "TEST\n";
+      _activePort!.write(Uint8List.fromList(testCommand.codeUnits));
+      print("📤 Sent test command: $testCommand");
+    }
   }
 
   void requestSensorData() {
-    if (_port != null && isConnected) {
+    if (_activePort != null && isConnected) {
       String command = "GET_SENSORS\n";
-      _port!.write(Uint8List.fromList(command.codeUnits));
+      _activePort!.write(Uint8List.fromList(command.codeUnits));
+      print("📤 Requested sensor data");
     }
   }
 
-  void testUsbCommunication() {
-    if (_port != null && isConnected) {
-      String testCommand = "TEST\n";
-      _port!.write(Uint8List.fromList(testCommand.codeUnits));
-
-      Future.delayed(const Duration(seconds: 2), () {
-        sendCompleteStructure();
-      });
-    }
-  }
-
-  // System power control with complete structure
+  // System power control
   void toggleSystemPower(bool turnOn) {
-    // 1. Update UI state immediately for responsiveness
     _isSwitched = turnOn;
     _prefs.setBool('system_switched', turnOn);
 
     print("✅ System status updated to: $_isSwitched");
     notifyListeners();
 
-    // 2. Send the COMPLETE, updated structure to the device
-    // This ensures all other settings (temp/humidity setpoints, lights) are preserved
-    if (_port != null && isConnected) {
+    if (_activePort != null && isConnected) {
       sendCompleteStructure();
-      print(
-        "📤 System power ${turnOn ? 'ON' : 'OFF'} command sent via complete structure.",
-      );
+      print("📤 System power ${turnOn ? 'ON' : 'OFF'} command sent");
     } else {
       print("⚠️ USB not connected, but UI state updated to: $turnOn");
     }
   }
 
-  // Use toggleSystemPower internally
   void toggleSystem(bool newValue) {
     toggleSystemPower(newValue);
   }
 
+  // Method to switch active device
+  Future<void> switchActiveDevice(String deviceId) async {
+    if (_devicePortMap.containsKey(deviceId)) {
+      _activeDeviceId = deviceId;
+      _prefs.setString('last_connected_device', deviceId);
+      isConnected = true;
+      usbStatus =
+          "Connected to ${_getDeviceDisplayName(_getDeviceById(deviceId)!)}";
+      notifyListeners();
+
+      sendCompleteStructure();
+    }
+  }
+
+  // Helper to get device by ID
+  UsbDevice? _getDeviceById(String deviceId) {
+    try {
+      return _availableDevices.firstWhere(
+        (device) => _getDeviceId(device) == deviceId,
+      );
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // Method to disconnect specific device
+  void disconnectDevice(String deviceId) {
+    _cleanupConnection(deviceId);
+    if (_devicePortMap.isEmpty) {
+      isConnected = false;
+      usbStatus = "Disconnected";
+    }
+    notifyListeners();
+  }
+
+  // Method to get device display info
+  Map<String, String> getDeviceInfo(String deviceId) {
+    final device = _getDeviceById(deviceId);
+    if (device != null) {
+      return {
+        'name': _getDeviceDisplayName(device),
+        'vid': device.vid.toString(),
+        'pid': device.pid.toString(),
+        'isActive': _activeDeviceId == deviceId ? 'true' : 'false',
+      };
+    }
+    return {};
+  }
+
   @override
   void dispose() {
+    print("🧹 Disposing GlobalUsbProvider...");
     _reconnectTimer?.cancel();
     _statusRequestTimer?.cancel();
-    _inputStreamSubscription?.cancel();
+    _inputStreamSubscriptions.forEach((key, subscription) {
+      subscription.cancel();
+    });
+    _inputStreamSubscriptions.clear();
     _usbEventSubscription?.cancel();
-    _port?.close();
+    _ports.forEach((port) => port.close());
     _audioPlayer.dispose();
     super.dispose();
   }

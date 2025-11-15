@@ -27,6 +27,7 @@ import 'package:surgeon_control_panel/screen/feather/rh.dart';
 import 'package:surgeon_control_panel/screen/feather/temp.dart';
 import 'package:surgeon_control_panel/screen/feather/timer.dart';
 import 'package:surgeon_control_panel/screen/profil/profilescreen.dart';
+import 'package:surgeon_control_panel/services/globalespprovider.dart';
 import 'package:surgeon_control_panel/services/usb_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -52,17 +53,12 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
     'pis',
     'store',
     'clean',
-    'phone',
   ];
-  // Send system status command to USB using GlobalUsbProvider
-  void _sendSystemStatusCommand(bool isOn) {
-    final usbProvider = Provider.of<GlobalUsbProvider>(context, listen: false);
 
-    // Use the provider's method instead of direct USB communication
-    usbProvider.toggleSystemPower(isOn);
-
-    _showSuccessSnackbar("System turned ${isOn ? 'ON' : 'OFF'}");
-  }
+  // ESP32 configuration
+  final String esp32BaseUrl = 'http://192.168.0.100:8080';
+  Timer? _esp32UpdateTimer;
+  bool _useEsp32 = false;
 
   // USB related variables
   UsbPort? _port;
@@ -83,20 +79,22 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
 
+  // MGPS blinking animation
+  late AnimationController _mgpsBlinkController;
+  late Animation<double> _mgpsBlinkAnimation;
+
   final Random _random = Random();
   final List<MedicalParticle> _particles = [];
 
   @override
   void initState() {
     super.initState();
-    // Initialize USB when screen loads (SharedPreferences is already initialized in main.dart)
+
+    // Initialize USB first, then check connection method
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final usbProvider = Provider.of<GlobalUsbProvider>(
-        context,
-        listen: false,
-      );
-      usbProvider.initUsb(); // Only initialize USB connection
+      _initializeUSBAndCheckConnection();
     });
+
     // Initialize particles
     for (int i = 0; i < 18; i++) {
       _particles.add(MedicalParticle(_random));
@@ -125,12 +123,68 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
 
+    // MGPS blinking animation
+    _mgpsBlinkController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    )..repeat(reverse: true);
+
+    _mgpsBlinkAnimation = Tween<double>(begin: 0.3, end: 1.0).animate(
+      CurvedAnimation(parent: _mgpsBlinkController, curve: Curves.easeInOut),
+    );
+
     _cardController.forward();
     _tabController = TabController(length: 2, vsync: this);
 
-    // Start USB and periodic updates
-    _initUsb();
+    // Start periodic updates
     _startPeriodicUpdates();
+  }
+
+  // NEW: Improved connection initialization
+  void _initializeUSBAndCheckConnection() {
+    final usbProvider = Provider.of<GlobalUsbProvider>(context, listen: false);
+
+    // Initialize USB connection
+    usbProvider.initUsb().then((_) {
+      // Check connection status after USB initialization
+      _checkConnectionMethod();
+
+      // Start ESP32 data fetching only if USB is not connected
+      if (!usbProvider.isConnected) {
+        _initializeEsp32Data();
+      }
+    });
+  }
+
+  void _initializeEsp32Data() {
+    final esp32Provider = Provider.of<ESP32State>(context, listen: false);
+    // Fetch initial data from ESP32
+    esp32Provider.refreshData();
+
+    // Start ESP32 auto-refresh timer (every 3 seconds)
+    _esp32UpdateTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
+      esp32Provider.refreshData();
+    });
+  }
+
+  // IMPROVED: Better connection method detection
+  void _checkConnectionMethod() {
+    final usbProvider = Provider.of<GlobalUsbProvider>(context, listen: false);
+
+    setState(() {
+      _useEsp32 = !usbProvider.isConnected;
+    });
+
+    if (_useEsp32) {
+      debugPrint("USB not connected, using ESP32 HTTP method");
+      // Stop any existing ESP32 timer and restart
+      _esp32UpdateTimer?.cancel();
+      _initializeEsp32Data();
+    } else {
+      debugPrint("USB connected, using USB method");
+      // Stop ESP32 timer when using USB
+      _esp32UpdateTimer?.cancel();
+    }
   }
 
   void _startPeriodicUpdates() {
@@ -141,50 +195,59 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
         listen: false,
       );
       usbProvider.refreshHepaStatus();
+
+      // Re-check connection method periodically
+      _checkConnectionMethod();
     });
   }
 
-  // USB Initialization
-  Future<void> _initUsb() async {
-    final usbProvider = Provider.of<GlobalUsbProvider>(context, listen: false);
-
+  // ESP32 HTTP command method
+  Future<void> _sendEsp32Command(String key, String value) async {
     try {
-      // USB status is now managed by GlobalUsbProvider
-      List<UsbDevice> devices = await UsbSerial.listDevices();
-      debugPrint("Found ${devices.length} USB devices");
+      debugPrint("ESP32: Sending $key = $value");
 
-      if (devices.isEmpty) {
-        return;
-      }
+      final response = await http
+          .get(Uri.parse('$esp32BaseUrl/update?$key=$value'))
+          .timeout(const Duration(seconds: 5));
 
-      UsbDevice device = devices.first;
-
-      _port = await device.create();
-      bool open = await _port!.open();
-
-      if (open) {
-        await _port!.setDTR(true);
-        await _port!.setRTS(true);
-        await _port!.setPortParameters(9600, 8, 1, 0);
-
-        // Cancel previous subscription if any
-        await _usbSubscription?.cancel();
-
-        _usbSubscription = _port!.inputStream?.listen(
-          (data) {
-            _onDataReceived(data);
-          },
-          onError: (e) {
-            debugPrint("USB input stream error: $e");
-          },
-          onDone: () {
-            debugPrint("USB input stream done");
-          },
+      if (response.statusCode == 200 || response.statusCode == 302) {
+        debugPrint("ESP32: Command sent successfully");
+        _showSuccessSnackbar("Command sent successfully");
+        // Refresh data after successful update
+        final esp32Provider = Provider.of<ESP32State>(context, listen: false);
+        esp32Provider.refreshData();
+      } else {
+        debugPrint(
+          "ESP32: Failed to send command - Status: ${response.statusCode}",
         );
+        _showErrorSnackbar("Failed to send command: ${response.statusCode}");
       }
     } catch (e) {
-      debugPrint("USB Error: $e");
+      debugPrint("ESP32: Error sending command: $e");
+      _showErrorSnackbar("Connection error: $e");
     }
+  }
+
+  // FIXED: System status command that works with both USB and ESP32
+  Future<void> _sendSystemStatusCommand(bool isOn) async {
+    if (_useEsp32) {
+      // Use ESP32 method
+      await _sendEsp32Command("S_Light_10_ON_OFF", isOn ? '1' : '0');
+    } else {
+      // Use USB method
+      final usbProvider = Provider.of<GlobalUsbProvider>(
+        context,
+        listen: false,
+      );
+      usbProvider.toggleSystemPower(isOn);
+      _showSuccessSnackbar("System turned ${isOn ? 'ON' : 'OFF'}");
+    }
+  }
+
+  // USB Initialization - SIMPLIFIED since GlobalUsbProvider handles this
+  Future<void> _initUsb() async {
+    // This is now handled by GlobalUsbProvider
+    debugPrint("USB initialization handled by GlobalUsbProvider");
   }
 
   void _toggleMute() {
@@ -252,6 +315,7 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
 
   void _parseStructuredData(String data) {
     final usbProvider = Provider.of<GlobalUsbProvider>(context, listen: false);
+    final esp32Provider = Provider.of<ESP32State>(context, listen: false);
 
     try {
       if (data.startsWith('{') && data.endsWith('}')) {
@@ -286,23 +350,31 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
 
         debugPrint("Parsed data: $parsedData");
 
-        // Parse current temperature
+        // Update ESP32State provider with parsed data (for consistency)
+        final newData = Map<String, String>.from(esp32Provider.data);
+        parsedData.forEach((key, value) {
+          if (value is String) {
+            newData[key] = value;
+          }
+        });
+
+        // Parse current temperature - FIXED FORMAT
         if (parsedData.containsKey('C_OT_TEMP')) {
           String tempStr = parsedData['C_OT_TEMP']!;
-          String newTemp = _formatNumericWithOneDecimal(tempStr);
+          String newTemp = _formatTemperatureValue(tempStr);
           usbProvider.updateTemperature(newTemp);
           debugPrint("Parsed and saved temperature: $newTemp°C");
         }
 
-        // Parse current humidity
+        // Parse current humidity - FIXED FORMAT
         if (parsedData.containsKey('C_RH')) {
           String humStr = parsedData['C_RH']!;
-          String newHum = _formatNumericWithOneDecimal(humStr);
+          String newHum = _formatHumidityValue(humStr);
           usbProvider.updateHumidity(newHum);
           debugPrint("Parsed and saved humidity: $newHum%");
         }
 
-        // Parse system status
+        // Parse system status (Light 10)
         if (parsedData.containsKey('S_Light_10_ON_OFF')) {
           String systemStatusStr = parsedData['S_Light_10_ON_OFF']!;
           bool systemStatus = systemStatusStr == '1';
@@ -318,20 +390,60 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
     }
   }
 
-  String _formatNumericWithOneDecimal(String s) {
-    if (s.length == 1) {
-      return "0.${s}";
-    } else {
-      String whole = s.substring(0, s.length - 1);
-      String dec = s.substring(s.length - 1);
-      int wholeInt = int.tryParse(whole) ?? 0;
-      return "$wholeInt.$dec";
+  // FIXED: Proper temperature formatting (e.g., 223 -> 22.3)
+  String _formatTemperatureValue(String s) {
+    if (s.isEmpty || s == '--') return '--';
+
+    try {
+      // Remove any non-numeric characters
+      String cleanStr = s.replaceAll(RegExp(r'[^0-9]'), '');
+
+      if (cleanStr.length <= 1) {
+        return "0.${cleanStr}";
+      } else {
+        // Take all but last digit as whole number, last digit as decimal
+        String whole = cleanStr.substring(0, cleanStr.length - 1);
+        String dec = cleanStr.substring(cleanStr.length - 1);
+        int wholeInt = int.tryParse(whole) ?? 0;
+        return "$wholeInt.$dec";
+      }
+    } catch (e) {
+      debugPrint("Error formatting temperature: $e");
+      return '--';
+    }
+  }
+
+  // FIXED: Proper humidity formatting (e.g., 456 -> 45.6)
+  String _formatHumidityValue(String s) {
+    if (s.isEmpty || s == '--') return '--';
+
+    try {
+      // Remove any non-numeric characters
+      String cleanStr = s.replaceAll(RegExp(r'[^0-9]'), '');
+
+      if (cleanStr.length <= 1) {
+        return "0.${cleanStr}";
+      } else {
+        // Take all but last digit as whole number, last digit as decimal
+        String whole = cleanStr.substring(0, cleanStr.length - 1);
+        String dec = cleanStr.substring(cleanStr.length - 1);
+        int wholeInt = int.tryParse(whole) ?? 0;
+        return "$wholeInt.$dec";
+      }
+    } catch (e) {
+      debugPrint("Error formatting humidity: $e");
+      return '--';
     }
   }
 
   void _reconnectUsb() {
     final usbProvider = Provider.of<GlobalUsbProvider>(context, listen: false);
     usbProvider.reconnectUsb();
+
+    // Re-check connection method after attempting reconnect
+    Future.delayed(const Duration(seconds: 2), () {
+      _checkConnectionMethod();
+    });
   }
 
   Future<void> _launchDroidRenderAndEnterPip() async {
@@ -371,17 +483,142 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
     );
   }
 
-  Future<String> fetchIpAddress() async {
-    try {
-      final response = await http.get(Uri.parse('https://api.ipify.org'));
-      if (response.statusCode == 200) {
-        return response.body;
-      } else {
-        return 'Failed to fetch IP'.tr;
-      }
-    } catch (e) {
-      return 'Error: $e'.tr;
+  // IMPROVED: Get temperature value from appropriate source
+  String _getTemperatureValue() {
+    if (_useEsp32) {
+      final esp32Provider = Provider.of<ESP32State>(context);
+      final tempValue = esp32Provider.data['C_OT_TEMP'] ?? '--';
+      return tempValue == '--' ? '00°C' : '$tempValue°C';
+    } else {
+      final usbProvider = Provider.of<GlobalUsbProvider>(context);
+      return usbProvider.currentTemperature == "--"
+          ? "00°C"
+          : '${usbProvider.currentTemperature}°C';
     }
+  }
+
+  // IMPROVED: Get humidity value from appropriate source
+  String _getHumidityValue() {
+    if (_useEsp32) {
+      final esp32Provider = Provider.of<ESP32State>(context);
+      final humValue = esp32Provider.data['C_RH'] ?? '--';
+      return humValue == '--' ? '00%' : '$humValue%';
+    } else {
+      final usbProvider = Provider.of<GlobalUsbProvider>(context);
+      return usbProvider.currentHumidity == "--"
+          ? "00%"
+          : '${usbProvider.currentHumidity}%';
+    }
+  }
+
+  // IMPROVED: Get system status from appropriate source
+  bool _getSystemStatus() {
+    if (_useEsp32) {
+      final esp32Provider = Provider.of<ESP32State>(context);
+      return esp32Provider.data['S_Light_10_ON_OFF'] == '1';
+    } else {
+      final usbProvider = Provider.of<GlobalUsbProvider>(context);
+      return usbProvider.isSwitched;
+    }
+  }
+
+  Widget buildScoreContainer(
+    BuildContext context,
+    String label,
+    IconData icon,
+    bool showTimer, {
+    String? currentValue,
+    required int itemNumber,
+  }) {
+    final stopwatchProvider = Provider.of<StopwatchProvider>(
+      context,
+      listen: false,
+    );
+    final usbProvider = Provider.of<GlobalUsbProvider>(context);
+
+    bool isMgpsWithFault = itemNumber == 4 && usbProvider.hasSensorFault();
+
+    return AnimatedBuilder(
+      animation: isMgpsWithFault
+          ? _mgpsBlinkAnimation
+          : AlwaysStoppedAnimation(1.0),
+      builder: (context, child) {
+        return Container(
+          margin: const EdgeInsets.all(0),
+          height: MediaQuery.of(context).size.height * 0.22,
+          width: MediaQuery.of(context).size.width * 0.22,
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: isMgpsWithFault
+                  ? Colors.red.withOpacity(_mgpsBlinkAnimation.value)
+                  : Colors.white.withOpacity(1.0),
+              width: isMgpsWithFault ? 4.0 : 3.0,
+            ),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                color: isMgpsWithFault
+                    ? Colors.red.withOpacity(_mgpsBlinkAnimation.value)
+                    : Colors.white,
+                size: 35,
+              ),
+              const SizedBox(height: 6),
+              Text(
+                label,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: isMgpsWithFault
+                      ? Colors.red.withOpacity(_mgpsBlinkAnimation.value)
+                      : Colors.white,
+                  fontSize: 30,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              if (currentValue != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    currentValue,
+                    style: TextStyle(
+                      color: isMgpsWithFault
+                          ? Colors.red.withOpacity(_mgpsBlinkAnimation.value)
+                          : Colors.white,
+                      fontSize: 27,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              if (showTimer && stopwatchProvider.isRunning)
+                StreamBuilder<int>(
+                  stream: stopwatchProvider.stopWatchTimer.rawTime,
+                  initialData: stopwatchProvider.stopWatchTimer.rawTime.value,
+                  builder: (context, snapshot) {
+                    final displayTime = StopWatchTimer.getDisplayTime(
+                      snapshot.data!,
+                      milliSecond: false,
+                    );
+                    return Text(
+                      displayTime,
+                      style: TextStyle(
+                        color: isMgpsWithFault
+                            ? Colors.red.withOpacity(_mgpsBlinkAnimation.value)
+                            : Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    );
+                  },
+                ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   Future<void> handleTap(int itemNumber) async {
@@ -408,28 +645,16 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
         Get.to(() => MusicPlayerScreen(), transition: Transition.rightToLeft);
         break;
       case 7:
-        // List<ConnectivityResult> results = await Connectivity()
-        //     .checkConnectivity();
-        // if (results.contains(ConnectivityResult.none)) {
-        //   Get.snackbar(
-        //     "no_internet".tr,
-        //     "check_connection".tr,
-        //     snackPosition: SnackPosition.BOTTOM,
-        //   );
-        // } else {
-        //   Get.to(() => VideoSwitcherScreen(), transition: Transition.fadeIn);
-        // }
         Get.to(() => VideoSwitcherScreen(), transition: Transition.fadeIn);
         break;
       case 8:
         _launchDroidRenderAndEnterPip();
-        // Get.to(() => GasStatusPage(), transition: Transition.rightToLeft);
         break;
       case 9:
         Get.to(() => PatientListScreen(), transition: Transition.rightToLeft);
         break;
       case 10:
-        Get.to(() => HospitalApp(), transition: Transition.rightToLeft);
+        Get.to(() => StoreHomeScreen(), transition: Transition.rightToLeft);
         break;
       case 11:
         Get.to(
@@ -437,105 +662,10 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
           transition: Transition.rightToLeft,
         );
         break;
-      case 12:
-        Get.to(() => DialerScreen(), transition: Transition.rightToLeft);
-        break;
     }
   }
 
-  @override
-  void dispose() {
-    _usbSubscription?.cancel();
-    _port?.close();
-    _tabController.dispose();
-    _updateTimer?.cancel();
-    _cardController.dispose();
-    _bgController.dispose();
-    _pulseController.dispose();
-    super.dispose();
-  }
-
-  Widget buildScoreContainer(
-    BuildContext context,
-    String label,
-    IconData icon,
-    bool showTimer, {
-    String? currentValue,
-    required int itemNumber,
-  }) {
-    final stopwatchProvider = Provider.of<StopwatchProvider>(
-      context,
-      listen: false,
-    );
-    final usbProvider = Provider.of<GlobalUsbProvider>(context);
-
-    bool isMgpsWithFault = itemNumber == 8 && usbProvider.hasSensorFault();
-
-    return Container(
-      margin: const EdgeInsets.all(0),
-      height: MediaQuery.of(context).size.height * 0.22,
-      width: MediaQuery.of(context).size.width * 0.22,
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: isMgpsWithFault ? Colors.red : Colors.white.withOpacity(1.0),
-          width: 3.0,
-        ),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, color: Colors.white, size: 35),
-          const SizedBox(height: 6),
-          Text(
-            label,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 30,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          if (currentValue != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text(
-                currentValue,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 27,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          if (showTimer && stopwatchProvider.isRunning)
-            StreamBuilder<int>(
-              stream: stopwatchProvider.stopWatchTimer.rawTime,
-              initialData: stopwatchProvider.stopWatchTimer.rawTime.value,
-              builder: (context, snapshot) {
-                final displayTime = StopWatchTimer.getDisplayTime(
-                  snapshot.data!,
-                  milliSecond: false,
-                );
-                return Text(
-                  displayTime,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                  ),
-                );
-              },
-            ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildMainTab() {
-    final usbProvider = Provider.of<GlobalUsbProvider>(context);
-
     return SingleChildScrollView(
       child: Column(
         children: [
@@ -569,13 +699,9 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
                         icon,
                         itemNumber == 5,
                         currentValue: itemNumber == 1
-                            ? (usbProvider.currentTemperature == "--"
-                                  ? "00"
-                                  : '${usbProvider.currentTemperature}°C')
+                            ? _getTemperatureValue()
                             : itemNumber == 2
-                            ? (usbProvider.currentHumidity == "--"
-                                  ? "00"
-                                  : '${usbProvider.currentHumidity}%')
+                            ? _getHumidityValue()
                             : null,
                         itemNumber: itemNumber,
                       ),
@@ -642,37 +768,59 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 180),
             child: Row(
-              children: List.generate(7, (index) {
-                if (index.isOdd) {
-                  return Container(
-                    width: 2,
-                    height: 100,
-                    color: Colors.white.withOpacity(0.0),
-                    margin: const EdgeInsets.symmetric(horizontal: 4),
-                  );
-                } else {
-                  int itemNumber = (index ~/ 2) + 9;
-                  final icon = [
-                    Icons.medical_services,
-                    Icons.store,
-                    Icons.cleaning_services,
-                    Icons.phone,
-                  ][itemNumber - 9];
-
-                  return Expanded(
-                    child: GestureDetector(
-                      onTap: () => handleTap(itemNumber),
-                      child: buildScoreContainer(
-                        context,
-                        itemKeys[itemNumber - 1].tr,
-                        icon,
-                        false,
-                        itemNumber: itemNumber,
-                      ),
+              children: [
+                // First item
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => handleTap(9),
+                    child: buildScoreContainer(
+                      context,
+                      itemKeys[8].tr, // 'dicom'
+                      Icons.medical_services,
+                      false,
+                      itemNumber: 9,
                     ),
-                  );
-                }
-              }),
+                  ),
+                ),
+                Container(
+                  width: 2,
+                  height: 100,
+                  color: Colors.white.withOpacity(0.0),
+                  margin: const EdgeInsets.symmetric(horizontal: 4),
+                ),
+                // Second item
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => handleTap(10),
+                    child: buildScoreContainer(
+                      context,
+                      itemKeys[9].tr, // 'pis'
+                      Icons.store,
+                      false,
+                      itemNumber: 10,
+                    ),
+                  ),
+                ),
+                Container(
+                  width: 2,
+                  height: 100,
+                  color: Colors.white.withOpacity(0.0),
+                  margin: const EdgeInsets.symmetric(horizontal: 4),
+                ),
+                // Third item
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => handleTap(11),
+                    child: buildScoreContainer(
+                      context,
+                      itemKeys[10].tr, // 'clean'
+                      Icons.cleaning_services,
+                      false,
+                      itemNumber: 11,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 20),
@@ -682,9 +830,24 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
   }
 
   @override
+  void dispose() {
+    _usbSubscription?.cancel();
+    _port?.close();
+    _tabController.dispose();
+    _updateTimer?.cancel();
+    _esp32UpdateTimer?.cancel();
+    _cardController.dispose();
+    _bgController.dispose();
+    _pulseController.dispose();
+    _mgpsBlinkController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final usbProvider = Provider.of<GlobalUsbProvider>(context);
     final audioProvider = Provider.of<GlobalUsbProvider>(context);
+
     return Scaffold(
       body: Stack(
         children: [
@@ -712,10 +875,10 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                         children: [
-                          ClockDisplay(neonColor: _neonColor),
+                          ClockDisplay(neonColor: Colors.white),
                           const SizedBox(),
                           Text(
-                            "WELCOME TO WIESPL CONTROL PANEL",
+                            "WELCOME TO WIESPL DIGITAL OR",
                             style: TextStyle(
                               color: Colors.white,
                               fontSize: 24,
@@ -764,20 +927,43 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
                                 },
                               ),
                               const SizedBox(width: 12),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 6,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: usbProvider.isConnected
-                                      ? Colors.transparent
-                                      : Colors.red,
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
 
+                              // Connection Status with reconnect button
+                              // Row(
+                              //   children: [
+                              //     Container(
+                              //       padding: const EdgeInsets.symmetric(
+                              //         horizontal: 12,
+                              //         vertical: 6,
+                              //       ),
+                              //       decoration: BoxDecoration(
+                              //         color: _useEsp32
+                              //             ? Colors.blue
+                              //             : Colors.green,
+                              //         borderRadius: BorderRadius.circular(12),
+                              //       ),
+                              //       child: Text(
+                              //         _useEsp32 ? "ESP32" : "USB",
+                              //         style: const TextStyle(
+                              //           color: Colors.white,
+                              //           fontSize: 10,
+                              //           fontWeight: FontWeight.bold,
+                              //         ),
+                              //       ),
+                              //     ),
+                              //     const SizedBox(width: 8),
+                              //     IconButton(
+                              //       onPressed: _reconnectUsb,
+                              //       icon: const Icon(
+                              //         Icons.usb,
+                              //         color: Colors.white,
+                              //         size: 20,
+                              //       ),
+                              //       tooltip: "Reconnect USB",
+                              //     ),
+                              //   ],
+                              // ),
+                              // const SizedBox(width: 12),
                               IconButton(
                                 onPressed: () async {
                                   final prefs =
@@ -817,8 +1003,20 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
                   labelColor: Colors.transparent,
                   unselectedLabelColor: Colors.transparent,
                   tabs: const [
-                    Tab(icon: Icon(Icons.circle, size: 12)),
-                    Tab(icon: Icon(Icons.circle, size: 12)),
+                    Tab(
+                      icon: Icon(
+                        Icons.circle,
+                        size: 12,
+                        color: Colors.transparent,
+                      ),
+                    ),
+                    Tab(
+                      icon: Icon(
+                        Icons.circle,
+                        size: 12,
+                        color: Colors.transparent,
+                      ),
+                    ),
                   ],
                 ),
 
@@ -850,19 +1048,19 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
                                   height: 120,
                                   width: 270,
                                   decoration: BoxDecoration(
-                                    color: Colors.white.withOpacity(0.3),
+                                    color: Colors.transparent,
                                     border: Border.all(
-                                      color: Colors.white.withOpacity(0.2),
+                                      color: Colors.transparent,
                                       width: 1.0,
                                     ),
                                   ),
-                                  child: Center(
-                                    child: Image.asset(
-                                      'assets/image.png',
-                                      height: 100,
-                                      width: 300,
-                                    ),
-                                  ),
+                                  // child: Center(
+                                  //   child: Image.asset(
+                                  //     'assets/image.png',
+                                  //     height: 100,
+                                  //     width: 300,
+                                  //   ),
+                                  // ),
                                 ),
                               ),
                             ),
@@ -879,9 +1077,9 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
                                   height: 100,
                                   width: 250,
                                   decoration: BoxDecoration(
-                                    color: Colors.white.withOpacity(0.3),
+                                    color: Colors.white.withOpacity(0.9),
                                     border: Border.all(
-                                      color: Colors.white.withOpacity(0.2),
+                                      color: Colors.white.withOpacity(0.1),
                                       width: 1.0,
                                     ),
                                   ),
@@ -965,96 +1163,51 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
                           ),
                           Consumer<GlobalUsbProvider>(
                             builder: (context, usbProvider, child) {
-                              bool isSwitching =
-                                  false; // You'll need to add this to your provider
-
-                              return Stack(
-                                alignment: Alignment.center,
-                                children: [
-                                  Switch(
-                                    value: usbProvider.isSwitched,
-                                    activeColor: Colors.lightBlueAccent,
-                                    inactiveThumbColor: Colors.grey.shade300,
-                                    inactiveTrackColor: Colors.grey.shade500,
-                                    onChanged: isSwitching
-                                        ? null
-                                        : (value) async {
-                                            // Disable during operation
-                                            if (!value) {
-                                              bool confirm = await showDialog(
-                                                context: context,
-                                                builder: (context) => AlertDialog(
-                                                  title: const Text("Confirm"),
-                                                  content: const Text(
-                                                    "Are you sure you want to turn off the system?",
-                                                  ),
-                                                  actions: [
-                                                    TextButton(
-                                                      onPressed: () =>
-                                                          Navigator.of(
-                                                            context,
-                                                          ).pop(false),
-                                                      child: const Text(
-                                                        "Cancel",
-                                                      ),
-                                                    ),
-                                                    TextButton(
-                                                      onPressed: () =>
-                                                          Navigator.of(
-                                                            context,
-                                                          ).pop(true),
-                                                      child: const Text("Yes"),
-                                                    ),
-                                                  ],
-                                                ),
-                                              );
-                                              if (!confirm) return;
-                                            }
-
-                                            // Show loading state
-                                            // usbProvider.setSwitching(true); // Add this method to provider
-
-                                            try {
-                                              _sendSystemStatusCommand(value);
-                                              // Success handled in provider
-                                            } catch (e) {
-                                              // Show error message
-                                              ScaffoldMessenger.of(
-                                                context,
-                                              ).showSnackBar(
-                                                SnackBar(
-                                                  content: Text(
-                                                    "Failed to ${value ? 'start' : 'stop'} system",
-                                                  ),
-                                                  backgroundColor: Colors.red,
-                                                ),
-                                              );
-                                              // Revert UI state on error
-                                              // usbProvider.updateSystemStatus(!value);
-                                            } finally {
-                                              // usbProvider.setSwitching(false);
-                                            }
-                                          },
-                                  ),
-
-                                  // Loading indicator overlay
-                                  if (isSwitching)
-                                    Container(
-                                      width: 48,
-                                      height: 48,
-                                      decoration: BoxDecoration(
-                                        color: Colors.black54,
-                                        borderRadius: BorderRadius.circular(24),
+                              return Switch(
+                                value: _getSystemStatus(),
+                                activeColor: Colors.lightBlueAccent,
+                                inactiveThumbColor: Colors.grey.shade300,
+                                inactiveTrackColor: Colors.grey.shade500,
+                                onChanged: (value) async {
+                                  if (!value) {
+                                    bool confirm = await showDialog(
+                                      context: context,
+                                      builder: (context) => AlertDialog(
+                                        title: const Text("Confirm"),
+                                        content: const Text(
+                                          "Are you sure you want to turn off the system?",
+                                        ),
+                                        actions: [
+                                          TextButton(
+                                            onPressed: () => Navigator.of(
+                                              context,
+                                            ).pop(false),
+                                            child: const Text("Cancel"),
+                                          ),
+                                          TextButton(
+                                            onPressed: () =>
+                                                Navigator.of(context).pop(true),
+                                            child: const Text("Yes"),
+                                          ),
+                                        ],
                                       ),
-                                      child: const CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        valueColor:
-                                            AlwaysStoppedAnimation<Color>(
-                                              Colors.white,
-                                            ),
+                                    );
+                                    if (!confirm) return;
+                                  }
+
+                                  try {
+                                    await _sendSystemStatusCommand(value);
+                                  } catch (e) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          "Failed to ${value ? 'start' : 'stop'} system",
+                                        ),
+                                        backgroundColor: Colors.red,
                                       ),
-                                    ),
-                                ],
+                                    );
+                                  }
+                                },
                               );
                             },
                           ),
@@ -1084,22 +1237,6 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
                         ],
                       ),
                       const SizedBox(width: 12),
-                      // IconButton(
-                      //   icon: const Icon(
-                      //     Icons.refresh,
-                      //     size: 42,
-                      //     color: Colors.white,
-                      //   ),
-                      //   onPressed: () {
-                      //     _reconnectUsb();
-                      //     usbProvider.refreshHepaStatus();
-                      //     Get.snackbar(
-                      //       "refreshing".tr,
-                      //       "",
-                      //       snackPosition: SnackPosition.BOTTOM,
-                      //     );
-                      //   },
-                      // ),
                     ],
                   ),
                 ),
@@ -1112,7 +1249,7 @@ class _HomeState extends State<Home> with TickerProviderStateMixin {
   }
 }
 
-// Keep all your existing helper classes below (they remain unchanged):
+// Keep all your existing helper classes below:
 
 class _AnimatedCounter extends StatefulWidget {
   final String value;

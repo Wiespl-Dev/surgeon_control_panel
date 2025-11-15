@@ -4,16 +4,18 @@ import 'dart:convert';
 import 'package:open_filex/open_filex.dart';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
-import 'dart:math'; // Required for log and pow in _formatBytes
+import 'dart:math';
+import 'package:flutter_pdfview/flutter_pdfview.dart';
+import 'package:photo_view/photo_view.dart';
 
 // ==================== DATA MODELS ====================
 
 class Patient {
   final int? id;
   final String patientId;
+  final String? patientCategory;
   final String name;
   final int age;
-  // ... (Patient model remains the same)
   final String gender;
   final String phone;
   final String? email;
@@ -33,10 +35,12 @@ class Patient {
   final String? operationDoctorRole;
   final String? operationNotes;
   final String? createdAt;
+  final int? reportCount;
 
   Patient({
     this.id,
     required this.patientId,
+    this.patientCategory,
     required this.name,
     required this.age,
     required this.gender,
@@ -58,12 +62,14 @@ class Patient {
     this.operationDoctorRole,
     this.operationNotes,
     this.createdAt,
+    this.reportCount,
   });
 
   factory Patient.fromJson(Map<String, dynamic> json) {
     return Patient(
       id: json['id'],
       patientId: json['patient_id'] ?? '',
+      patientCategory: json['patient_category'],
       name: json['name'] ?? '',
       age: json['age'] ?? 0,
       gender: json['gender'] ?? '',
@@ -85,12 +91,14 @@ class Patient {
       operationDoctorRole: json['operation_doctor_role'],
       operationNotes: json['operation_notes'],
       createdAt: json['created_at'],
+      reportCount: json['report_count'],
     );
   }
 
   Map<String, dynamic> toJson() {
     return {
       'patient_id': patientId,
+      'patient_category': patientCategory,
       'name': name,
       'age': age,
       'gender': gender,
@@ -115,7 +123,6 @@ class Patient {
   }
 }
 
-// ⭐️ NEW REPORT MODEL
 class Report {
   final int id;
   final String patientId;
@@ -124,8 +131,8 @@ class Report {
   final int fileSize;
   final String fileType;
   final String description;
-  final String fileUrl; // Full URL for direct access
-  final String? uploadDate; // Assuming 'upload_date' from DB
+  final String fileUrl;
+  final String? uploadDate;
 
   Report({
     required this.id,
@@ -157,7 +164,8 @@ class Report {
 // ==================== API SERVICE ====================
 
 class ApiService {
-  static const String baseUrl = 'http://192.168.1.230:3000/api';
+  // Update this IP address to match your computer's IP
+  static const String baseUrl = 'http://192.168.0.101:3000/api';
 
   // Handle API errors
   void _handleError(http.Response response) {
@@ -175,7 +183,7 @@ class ApiService {
     return data.map((json) => Patient.fromJson(json)).toList();
   }
 
-  // ... (Other Patient CRUD methods remain the same)
+  // Get single patient
   Future<Patient> getPatient(String patientId) async {
     final response = await http.get(Uri.parse('$baseUrl/patients/$patientId'));
     _handleError(response);
@@ -183,6 +191,7 @@ class ApiService {
     return Patient.fromJson(data);
   }
 
+  // Add new patient
   Future<Patient> addPatient(Patient patient) async {
     final response = await http.post(
       Uri.parse('$baseUrl/patients'),
@@ -194,6 +203,7 @@ class ApiService {
     return Patient.fromJson({...patient.toJson(), 'id': data['id']});
   }
 
+  // Update patient
   Future<void> updatePatient(String patientId, Patient patient) async {
     final response = await http.put(
       Uri.parse('$baseUrl/patients/$patientId'),
@@ -203,6 +213,7 @@ class ApiService {
     _handleError(response);
   }
 
+  // Delete patient
   Future<void> deletePatient(String patientId) async {
     final response = await http.delete(
       Uri.parse('$baseUrl/patients/$patientId'),
@@ -210,42 +221,257 @@ class ApiService {
     _handleError(response);
   }
 
+  // Check server status
   Future<bool> checkServerStatus() async {
     try {
-      final response = await http.get(Uri.parse('$baseUrl/debug'));
+      final response = await http.get(Uri.parse('$baseUrl/test'));
       return response.statusCode == 200;
     } catch (e) {
       return false;
     }
   }
 
-  // ⭐️ NEW: Get all reports for a patient
+  // Get all reports for a patient
   Future<List<Report>> getReports(String patientId) async {
     final response = await http.get(
       Uri.parse('$baseUrl/patients/$patientId/reports'),
     );
-
     _handleError(response);
-
     final List<dynamic> data = json.decode(response.body);
     return data.map((json) => Report.fromJson(json)).toList();
   }
 
-  // ⭐️ NEW: Download the report file bytes using the correct endpoint
+  // Download report file
   Future<List<int>> downloadReport(String patientId, int reportId) async {
-    // The server-side endpoint is /api/patients/:patientId/reports/:reportId/download
     final response = await http.get(
       Uri.parse('$baseUrl/patients/$patientId/reports/$reportId/download'),
     );
-
     _handleError(response);
-
-    // The server streams the file directly, so we return the raw bytes
     return response.bodyBytes;
+  }
+
+  // Get patients with report counts
+  Future<List<Patient>> getPatientsWithReports() async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/patients-with-reports'),
+    );
+    _handleError(response);
+    final List<dynamic> data = json.decode(response.body);
+    return data.map((json) => Patient.fromJson(json)).toList();
   }
 }
 
-// ==================== WIDGETS ====================
+// ==================== FILE VIEWER SCREEN ====================
+
+class FileViewerScreen extends StatefulWidget {
+  final String filePath;
+  final String fileName;
+  final String fileType;
+
+  const FileViewerScreen({
+    Key? key,
+    required this.filePath,
+    required this.fileName,
+    required this.fileType,
+  }) : super(key: key);
+
+  @override
+  State<FileViewerScreen> createState() => _FileViewerScreenState();
+}
+
+class _FileViewerScreenState extends State<FileViewerScreen> {
+  bool _isLoading = true;
+  String? _pdfPath;
+  int? _totalPages;
+  int _currentPage = 0;
+  bool _pdfReady = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeFile();
+  }
+
+  void _initializeFile() {
+    setState(() {
+      _isLoading = false;
+      _pdfPath = widget.filePath;
+      _pdfReady = true;
+    });
+  }
+
+  bool get _isPdf => widget.fileType.toLowerCase().contains('pdf');
+  bool get _isImage {
+    final type = widget.fileType.toLowerCase();
+    return type.contains('jpg') ||
+        type.contains('jpeg') ||
+        type.contains('png') ||
+        type.contains('gif') ||
+        type.contains('bmp');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(widget.fileName),
+        backgroundColor: const Color(0xFF2196F3),
+        foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.open_in_new),
+            onPressed: () => OpenFilex.open(widget.filePath),
+            tooltip: 'Open with external app',
+          ),
+        ],
+      ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _isPdf
+          ? _buildPdfViewer()
+          : _isImage
+          ? _buildImageViewer()
+          : _buildUnsupportedFileView(),
+    );
+  }
+
+  Widget _buildPdfViewer() {
+    return Column(
+      children: [
+        if (_totalPages != null)
+          Container(
+            padding: const EdgeInsets.all(8),
+            color: Colors.grey[200],
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Page $_currentPage of $_totalPages',
+                  style: const TextStyle(fontSize: 14),
+                ),
+                if (_totalPages! > 1)
+                  Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.arrow_back_ios, size: 16),
+                        onPressed: _currentPage > 0
+                            ? () {
+                                // You can add page navigation logic here
+                              }
+                            : null,
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.arrow_forward_ios, size: 16),
+                        onPressed: _currentPage < _totalPages! - 1
+                            ? () {
+                                // You can add page navigation logic here
+                              }
+                            : null,
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+          ),
+        Expanded(
+          child: PDFView(
+            filePath: _pdfPath,
+            autoSpacing: true,
+            enableSwipe: true,
+            pageSnap: true,
+            swipeHorizontal: false,
+            onRender: (_pages) {
+              setState(() {
+                _totalPages = _pages;
+                _pdfReady = true;
+              });
+            },
+            onError: (error) {
+              print(error.toString());
+            },
+            onPageError: (page, error) {
+              print('$page: ${error.toString()}');
+            },
+            onViewCreated: (PDFViewController pdfViewController) {
+              // You can store the controller for later use
+            },
+            onPageChanged: (int? page, int? total) {
+              setState(() {
+                _currentPage = page!;
+              });
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildImageViewer() {
+    return PhotoView(
+      imageProvider: FileImage(File(widget.filePath)),
+      backgroundDecoration: const BoxDecoration(color: Colors.black),
+      minScale: PhotoViewComputedScale.contained,
+      maxScale: PhotoViewComputedScale.covered * 2,
+      initialScale: PhotoViewComputedScale.contained,
+      basePosition: Alignment.center,
+    );
+  }
+
+  Widget _buildUnsupportedFileView() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.insert_drive_file, size: 64, color: Colors.grey),
+          const SizedBox(height: 16),
+          const Text(
+            'File Type Not Supported',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'File type: ${widget.fileType}',
+            style: const TextStyle(color: Colors.grey),
+          ),
+          const SizedBox(height: 20),
+          ElevatedButton(
+            onPressed: () => OpenFilex.open(widget.filePath),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF2196F3),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Open with External App'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ==================== MAIN APP ====================
+
+void main() {
+  runApp(const HospitalManagementApp());
+}
+
+class HospitalManagementApp extends StatelessWidget {
+  const HospitalManagementApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Hospital Management',
+      theme: ThemeData(
+        primarySwatch: Colors.blue,
+        visualDensity: VisualDensity.adaptivePlatformDensity,
+      ),
+      home: const PatientListScreen(),
+      debugShowCheckedModeBanner: false,
+    );
+  }
+}
+
+// ==================== PATIENT LIST SCREEN ====================
 
 class PatientListScreen extends StatefulWidget {
   const PatientListScreen({Key? key}) : super(key: key);
@@ -254,7 +480,6 @@ class PatientListScreen extends StatefulWidget {
   _PatientListScreenState createState() => _PatientListScreenState();
 }
 
-// ... (_PatientListScreenState methods remain the same)
 class _PatientListScreenState extends State<PatientListScreen> {
   final ApiService _apiService = ApiService();
   List<Patient> _patients = [];
@@ -283,7 +508,7 @@ class _PatientListScreenState extends State<PatientListScreen> {
     });
 
     try {
-      final patients = await _apiService.getPatients();
+      final patients = await _apiService.getPatientsWithReports();
       setState(() {
         _patients = patients;
         _isLoading = false;
@@ -322,7 +547,7 @@ class _PatientListScreenState extends State<PatientListScreen> {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Patient $patientName deleted')));
-        _loadPatients(); // Refresh the list
+        _loadPatients();
       } catch (e) {
         // ignore: use_build_context_synchronously
         ScaffoldMessenger.of(
@@ -351,6 +576,7 @@ class _PatientListScreenState extends State<PatientListScreen> {
                 controller: patientIdController,
                 decoration: const InputDecoration(
                   labelText: 'Patient ID',
+                  hintText: 'Auto-generated if empty',
                   border: OutlineInputBorder(),
                 ),
               ),
@@ -444,6 +670,91 @@ class _PatientListScreenState extends State<PatientListScreen> {
     );
   }
 
+  Widget _buildPatientCard(Patient patient, int index) {
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      elevation: 2,
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: _getColorByIndex(index),
+          child: Text(
+            patient.name[0].toUpperCase(),
+            style: const TextStyle(color: Colors.white),
+          ),
+        ),
+        title: Text(
+          patient.name,
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 4),
+            Text(
+              'ID: ${patient.patientId} • ${patient.age} years • ${patient.gender}',
+              style: const TextStyle(fontSize: 14),
+            ),
+            if (patient.phone.isNotEmpty)
+              Text(
+                'Phone: ${patient.phone}',
+                style: const TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+            if (patient.reportCount != null && patient.reportCount! > 0)
+              Chip(
+                label: Text(
+                  '${patient.reportCount} reports',
+                  style: const TextStyle(fontSize: 10, color: Colors.white),
+                ),
+                backgroundColor: Colors.blue,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                visualDensity: VisualDensity.compact,
+              ),
+          ],
+        ),
+        trailing: PopupMenuButton<String>(
+          onSelected: (value) {
+            if (value == 'view') {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => PatientDetailScreen(patient: patient),
+                ),
+              );
+            } else if (value == 'delete') {
+              _deletePatient(patient.patientId, patient.name);
+            }
+          },
+          itemBuilder: (context) => [
+            const PopupMenuItem(value: 'view', child: Text('View Details')),
+            const PopupMenuItem(value: 'delete', child: Text('Delete')),
+          ],
+        ),
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => PatientDetailScreen(patient: patient),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Color _getColorByIndex(int index) {
+    final colors = [
+      Colors.blue,
+      Colors.green,
+      Colors.orange,
+      Colors.purple,
+      Colors.teal,
+      Colors.pink,
+      Colors.indigo,
+      Colors.cyan,
+    ];
+    return colors[index % colors.length];
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -452,21 +763,39 @@ class _PatientListScreenState extends State<PatientListScreen> {
         title: const Text('Hospital Patients'),
         backgroundColor: const Color(0xFF3D8A8F),
         foregroundColor: Colors.white,
+        elevation: 0,
         actions: [
-          // Server status indicator
           IconButton(
             icon: Icon(
               _serverOnline ? Icons.cloud_done : Icons.cloud_off,
-              color: _serverOnline ? Colors.green : Colors.red,
+              color: _serverOnline ? Colors.greenAccent : Colors.redAccent,
             ),
             onPressed: _checkServerStatus,
+            tooltip: _serverOnline ? 'Server Online' : 'Server Offline',
           ),
-          IconButton(icon: const Icon(Icons.refresh), onPressed: _loadPatients),
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _loadPatients,
+            tooltip: 'Refresh',
+          ),
         ],
       ),
-
+      floatingActionButton: FloatingActionButton(
+        onPressed: _showAddPatientDialog,
+        backgroundColor: const Color(0xFF2196F3),
+        child: const Icon(Icons.add, color: Colors.white),
+      ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text('Loading patients...'),
+                ],
+              ),
+            )
           : _error.isNotEmpty
           ? Center(
               child: Column(
@@ -474,9 +803,9 @@ class _PatientListScreenState extends State<PatientListScreen> {
                 children: [
                   const Icon(Icons.error_outline, size: 64, color: Colors.red),
                   const SizedBox(height: 16),
-                  Text(
+                  const Text(
                     'Error Loading Patients',
-                    style: Theme.of(context).textTheme.headlineSmall,
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 8),
                   Padding(
@@ -490,6 +819,10 @@ class _PatientListScreenState extends State<PatientListScreen> {
                   const SizedBox(height: 20),
                   ElevatedButton(
                     onPressed: _loadPatients,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF2196F3),
+                      foregroundColor: Colors.white,
+                    ),
                     child: const Text('Retry'),
                   ),
                 ],
@@ -518,90 +851,25 @@ class _PatientListScreenState extends State<PatientListScreen> {
                   const SizedBox(height: 20),
                   ElevatedButton(
                     onPressed: _showAddPatientDialog,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF2196F3),
+                      foregroundColor: Colors.white,
+                    ),
                     child: const Text('Add First Patient'),
                   ),
                 ],
               ),
             )
-          : ListView.builder(
-              itemCount: _patients.length,
-              itemBuilder: (context, index) {
-                final patient = _patients[index];
-                return Card(
-                  margin: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  child: ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: _getColorByIndex(index),
-                      child: Text(
-                        patient.name[0].toUpperCase(),
-                        style: const TextStyle(color: Colors.white),
-                      ),
-                    ),
-                    title: Text(
-                      patient.name,
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    subtitle: Text(
-                      'ID: ${patient.patientId} • ${patient.age} years • ${patient.gender}',
-                    ),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.visibility, size: 20),
-                          onPressed: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) =>
-                                    PatientDetailScreen(patient: patient),
-                              ),
-                            );
-                          },
-                        ),
-                        IconButton(
-                          icon: const Icon(
-                            Icons.delete,
-                            size: 20,
-                            color: Colors.red,
-                          ),
-                          onPressed: () {
-                            _deletePatient(patient.patientId, patient.name);
-                          },
-                        ),
-                      ],
-                    ),
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) =>
-                              PatientDetailScreen(patient: patient),
-                        ),
-                      );
-                    },
-                  ),
-                );
-              },
+          : RefreshIndicator(
+              onRefresh: _loadPatients,
+              child: ListView.builder(
+                itemCount: _patients.length,
+                itemBuilder: (context, index) {
+                  return _buildPatientCard(_patients[index], index);
+                },
+              ),
             ),
     );
-  }
-
-  Color _getColorByIndex(int index) {
-    final colors = [
-      Colors.blue,
-      Colors.green,
-      Colors.orange,
-      Colors.purple,
-      Colors.teal,
-      Colors.pink,
-      Colors.indigo,
-      Colors.cyan,
-    ];
-    return colors[index % colors.length];
   }
 }
 
@@ -613,9 +881,9 @@ class PatientDetailScreen extends StatelessWidget {
   const PatientDetailScreen({Key? key, required this.patient})
     : super(key: key);
 
-  Widget _buildInfoRow(String label, String value) {
+  Widget _buildInfoRow(String label, String value, {bool isImportant = false}) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -623,16 +891,21 @@ class PatientDetailScreen extends StatelessWidget {
             width: 140,
             child: Text(
               '$label:',
-              style: const TextStyle(
+              style: TextStyle(
                 fontWeight: FontWeight.w600,
-                color: Colors.blueGrey,
+                color: Colors.grey[700],
+                fontSize: 14,
               ),
             ),
           ),
           Expanded(
             child: Text(
               value.isEmpty ? 'Not specified' : value,
-              style: const TextStyle(fontSize: 16),
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: isImportant ? FontWeight.w500 : FontWeight.normal,
+                color: isImportant ? Colors.blue[800] : Colors.black87,
+              ),
             ),
           ),
         ],
@@ -654,7 +927,7 @@ class PatientDetailScreen extends StatelessWidget {
               style: const TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
-                color: Colors.blue,
+                color: Color(0xFF2196F3),
               ),
             ),
             const SizedBox(height: 12),
@@ -668,11 +941,12 @@ class PatientDetailScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF3D8A8F),
+      backgroundColor: const Color(0xFFf5f5f5),
       appBar: AppBar(
         title: Text(patient.name),
-        backgroundColor: const Color(0xFF3D8A8F),
+        backgroundColor: const Color(0xFF2196F3),
         foregroundColor: Colors.white,
+        elevation: 0,
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
@@ -680,76 +954,106 @@ class PatientDetailScreen extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Patient ID Header
-            Row(
-              children: [
-                Center(
-                  child: Chip(
-                    label: Text(
-                      'Patient ID: ${patient.patientId}',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
+            Card(
+              elevation: 3,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    const Icon(Icons.person_outline, color: Colors.blue),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Patient ID: ${patient.patientId}',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.blue,
+                            ),
+                          ),
+                          if (patient.reportCount != null &&
+                              patient.reportCount! > 0)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: Text(
+                                '${patient.reportCount} medical reports available',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.green,
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
                     ),
-                    backgroundColor: Colors.blue,
-                  ),
-                ),
-                const SizedBox(width: 20),
-
-                // ⭐️ UPDATED: Button to view list of reports
-                Center(
-                  child: ElevatedButton.icon(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => PatientReportsListScreen(
-                            patient: patient,
-                          ), // Navigate to List Screen
-                        ),
-                      );
-                    },
-                    icon: const Icon(Icons.folder_open),
-                    label: const Text('View Patient Reports'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red[700],
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 24,
-                        vertical: 12,
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) =>
+                                PatientReportsScreen(patient: patient),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.folder_open, size: 18),
+                      label: const Text('View Reports'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                        foregroundColor: Colors.white,
                       ),
                     ),
-                  ),
+                  ],
                 ),
-              ],
+              ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 16),
 
             // Basic Information
             _buildSection('Basic Information', [
-              _buildInfoRow('Full Name', patient.name),
-              _buildInfoRow('Age', '${patient.age} years'),
-              _buildInfoRow('Gender', patient.gender),
-              _buildInfoRow('Phone', patient.phone),
+              _buildInfoRow('Full Name', patient.name, isImportant: true),
+              _buildInfoRow('Age', '${patient.age} years', isImportant: true),
+              _buildInfoRow('Gender', patient.gender, isImportant: true),
+              _buildInfoRow('Phone', patient.phone, isImportant: true),
               _buildInfoRow('Email', patient.email ?? ''),
               _buildInfoRow('Blood Group', patient.bloodGroup ?? ''),
               _buildInfoRow('Address', patient.address ?? ''),
+              _buildInfoRow(
+                'Patient Category',
+                patient.patientCategory ?? 'General',
+              ),
             ]),
 
             // Emergency Contact
-            _buildSection('Emergency Contact', [
-              _buildInfoRow('Contact Name', patient.emergencyName ?? ''),
-              _buildInfoRow('Contact Number', patient.emergencyContact ?? ''),
-            ]),
+            if (patient.emergencyContact != null ||
+                patient.emergencyName != null)
+              _buildSection('Emergency Contact', [
+                _buildInfoRow('Contact Name', patient.emergencyName ?? ''),
+                _buildInfoRow('Contact Number', patient.emergencyContact ?? ''),
+              ]),
 
             // Medical Information
             _buildSection('Medical Information', [
-              _buildInfoRow('Allergies', patient.allergies ?? ''),
-              _buildInfoRow('Current Medications', patient.medications ?? ''),
-              _buildInfoRow('Medical History', patient.medicalHistory ?? ''),
-              _buildInfoRow('Insurance Provider', patient.insurance ?? ''),
-              _buildInfoRow('Insurance ID', patient.insuranceId ?? ''),
+              _buildInfoRow('Allergies', patient.allergies ?? 'None recorded'),
+              _buildInfoRow(
+                'Current Medications',
+                patient.medications ?? 'None recorded',
+              ),
+              _buildInfoRow(
+                'Medical History',
+                patient.medicalHistory ?? 'None recorded',
+              ),
+              _buildInfoRow(
+                'Insurance Provider',
+                patient.insurance ?? 'Not specified',
+              ),
+              _buildInfoRow(
+                'Insurance ID',
+                patient.insuranceId ?? 'Not specified',
+              ),
             ]),
 
             // Operation Details
@@ -766,7 +1070,7 @@ class PatientDetailScreen extends StatelessWidget {
                 _buildInfoRow('Operation Notes', patient.operationNotes ?? ''),
               ]),
 
-            // Created Date
+            // System Information
             if (patient.createdAt != null)
               _buildSection('System Information', [
                 _buildInfoRow('Created On', patient.createdAt!),
@@ -780,20 +1084,18 @@ class PatientDetailScreen extends StatelessWidget {
   }
 }
 
-// ❌ DELETED: PatientReportScreen is replaced by PatientReportsListScreen
+// ==================== PATIENT REPORTS SCREEN ====================
 
-// ⭐️ NEW: Screen to list, download, and open reports
-class PatientReportsListScreen extends StatefulWidget {
+class PatientReportsScreen extends StatefulWidget {
   final Patient patient;
 
-  const PatientReportsListScreen({super.key, required this.patient});
+  const PatientReportsScreen({super.key, required this.patient});
 
   @override
-  State<PatientReportsListScreen> createState() =>
-      _PatientReportsListScreenState();
+  State<PatientReportsScreen> createState() => _PatientReportsScreenState();
 }
 
-class _PatientReportsListScreenState extends State<PatientReportsListScreen> {
+class _PatientReportsScreenState extends State<PatientReportsScreen> {
   final ApiService _apiService = ApiService();
   List<Report> _reports = [];
   bool _isLoading = true;
@@ -824,7 +1126,6 @@ class _PatientReportsListScreenState extends State<PatientReportsListScreen> {
     }
   }
 
-  // File size utility (uses dart:math.log and dart:math.pow)
   String _formatBytes(int bytes) {
     if (bytes <= 0) return '0 B';
     const suffixes = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -832,43 +1133,52 @@ class _PatientReportsListScreenState extends State<PatientReportsListScreen> {
     return '${(bytes / pow(1024, i)).toStringAsFixed(1)} ${suffixes[i]}';
   }
 
-  // ⭐️ Download and Open Logic (Uses correct ApiService.downloadReport)
   Future<void> _downloadAndOpenReport(Report report) async {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Downloading ${report.originalName}...')),
     );
 
     try {
-      // 1. Download file bytes using the correct endpoint
       final bytes = await _apiService.downloadReport(
         widget.patient.patientId,
         report.id,
       );
 
-      // 2. Save the bytes to a temporary local file
       final directory = await getTemporaryDirectory();
-      // Use original file name for better compatibility
       final filePath = '${directory.path}/${report.originalName}';
       final file = File(filePath);
       await file.writeAsBytes(bytes);
 
-      // 3. Use open_filex to launch the file
-      final result = await OpenFilex.open(filePath);
+      // Check if it's a PDF or image to use internal viewer
+      final isPdf = report.fileType.toLowerCase().contains('pdf');
+      final isImage =
+          report.fileType.toLowerCase().contains('jpg') ||
+          report.fileType.toLowerCase().contains('jpeg') ||
+          report.fileType.toLowerCase().contains('png');
 
-      // 4. Handle result
-      if (result.type == ResultType.done) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('${report.originalName} opened successfully.'),
+      if (isPdf || isImage) {
+        // Use internal viewer for PDFs and images
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => FileViewerScreen(
+              filePath: filePath,
+              fileName: report.originalName,
+              fileType: report.fileType,
+            ),
           ),
         );
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to open file: ${result.message}'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        // Use external app for other file types
+        final result = await OpenFilex.open(filePath);
+        if (result.type != ResultType.done) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to open file: ${result.message}'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -880,13 +1190,33 @@ class _PatientReportsListScreenState extends State<PatientReportsListScreen> {
     }
   }
 
+  IconData _getIconForMimeType(String mimeType) {
+    if (mimeType.contains('pdf')) return Icons.picture_as_pdf;
+    if (mimeType.contains('image')) return Icons.image;
+    if (mimeType.contains('text') || mimeType.contains('csv'))
+      return Icons.text_snippet;
+    if (mimeType.contains('word') || mimeType.contains('document'))
+      return Icons.description;
+    return Icons.insert_drive_file;
+  }
+
+  Color _getColorForMimeType(String mimeType) {
+    if (mimeType.contains('pdf')) return Colors.red;
+    if (mimeType.contains('image')) return Colors.green;
+    if (mimeType.contains('text') || mimeType.contains('csv'))
+      return Colors.blue;
+    if (mimeType.contains('word') || mimeType.contains('document'))
+      return Colors.blue;
+    return Colors.grey;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF3D8A8F),
+      backgroundColor: const Color(0xFFf5f5f5),
       appBar: AppBar(
-        title: Text('${widget.patient.name} Reports'),
-        backgroundColor: Colors.blue[700],
+        title: Text('${widget.patient.name} - Reports'),
+        backgroundColor: const Color(0xFF2196F3),
         foregroundColor: Colors.white,
         actions: [
           IconButton(icon: const Icon(Icons.refresh), onPressed: _loadReports),
@@ -896,10 +1226,54 @@ class _PatientReportsListScreenState extends State<PatientReportsListScreen> {
           ? const Center(child: CircularProgressIndicator())
           : _error.isNotEmpty
           ? Center(
-              child: Text(_error, style: const TextStyle(color: Colors.red)),
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(
+                      Icons.error_outline,
+                      size: 64,
+                      color: Colors.red,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      _error,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: Colors.red, fontSize: 16),
+                    ),
+                    const SizedBox(height: 20),
+                    ElevatedButton(
+                      onPressed: _loadReports,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF2196F3),
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('Retry'),
+                    ),
+                  ],
+                ),
+              ),
             )
           : _reports.isEmpty
-          ? Center(child: Text('No reports found for ${widget.patient.name}.'))
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.folder_open, size: 64, color: Colors.grey),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'No Reports Found',
+                    style: TextStyle(fontSize: 18, color: Colors.grey),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'No medical reports available for ${widget.patient.name}',
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            )
           : ListView.builder(
               padding: const EdgeInsets.all(8),
               itemCount: _reports.length,
@@ -907,30 +1281,65 @@ class _PatientReportsListScreenState extends State<PatientReportsListScreen> {
                 final report = _reports[index];
                 return Card(
                   margin: const EdgeInsets.symmetric(vertical: 4),
+                  elevation: 2,
                   child: ListTile(
-                    leading: Icon(
-                      _getIconForMimeType(report.fileType),
-                      color: Colors.blueGrey,
+                    leading: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: _getColorForMimeType(
+                          report.fileType,
+                        ).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                        _getIconForMimeType(report.fileType),
+                        color: _getColorForMimeType(report.fileType),
+                        size: 24,
+                      ),
                     ),
-                    title: Text(report.originalName),
+                    title: Text(
+                      report.originalName,
+                      style: const TextStyle(fontWeight: FontWeight.w500),
+                    ),
                     subtitle: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        const SizedBox(height: 4),
                         Text(
-                          '${report.fileType} | ${_formatBytes(report.fileSize)}',
+                          '${report.fileType.split('/').last.toUpperCase()} • ${_formatBytes(report.fileSize)}',
+                          style: const TextStyle(fontSize: 12),
                         ),
                         if (report.description.isNotEmpty)
-                          Text(
-                            report.description,
-                            style: const TextStyle(fontStyle: FontStyle.italic),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              report.description,
+                              style: const TextStyle(
+                                fontStyle: FontStyle.italic,
+                                fontSize: 12,
+                                color: Colors.grey,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        if (report.uploadDate != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Text(
+                              'Uploaded: ${report.uploadDate!.split(' ')[0]}',
+                              style: const TextStyle(
+                                fontSize: 10,
+                                color: Colors.grey,
+                              ),
+                            ),
                           ),
                       ],
                     ),
                     trailing: IconButton(
                       icon: const Icon(Icons.download, color: Colors.green),
                       onPressed: () => _downloadAndOpenReport(report),
+                      tooltip: 'Download and Open',
                     ),
                     onTap: () => _downloadAndOpenReport(report),
                   ),
@@ -938,15 +1347,5 @@ class _PatientReportsListScreenState extends State<PatientReportsListScreen> {
               },
             ),
     );
-  }
-
-  IconData _getIconForMimeType(String mimeType) {
-    if (mimeType.contains('pdf')) return Icons.picture_as_pdf;
-    if (mimeType.contains('image')) return Icons.image;
-    if (mimeType.contains('text') || mimeType.contains('csv'))
-      return Icons.text_snippet;
-    if (mimeType.contains('word') || mimeType.contains('document'))
-      return Icons.description;
-    return Icons.insert_drive_file;
   }
 }
