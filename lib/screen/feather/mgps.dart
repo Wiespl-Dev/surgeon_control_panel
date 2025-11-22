@@ -1,10 +1,393 @@
+// import 'dart:async'; // Added for Timer
+// import 'dart:typed_data';
+// import 'package:audioplayers/audioplayers.dart';
+// import 'package:flutter/material.dart';
+// import 'package:surgeon_control_panel/services/usb_service.dart';
+// // Removed: usb_serial.dart is not used directly here
+// import 'package:provider/provider.dart';
+// import 'package:http/http.dart' as http; // Added for HTTP requests
+
+// class GasStatusPage extends StatefulWidget {
+//   @override
+//   _GasStatusPageState createState() => _GasStatusPageState();
+// }
+
+// class _GasStatusPageState extends State<GasStatusPage> {
+//   List<GasStatus> _gasStatusList = [];
+
+//   // --- ESP32 Configuration ---
+//   final String esp32BaseUrl = 'http://192.168.1.143:8080';
+//   Timer? _dataTimer;
+//   String _esp32Status = "Connecting..."; // Replaces USB connection state
+
+//   // Gas configuration
+//   final List<Map<String, dynamic>> _gasConfigs = [
+//     {"name": "Oxygen", "icon": Icons.air},
+//     {"name": "Nitrogen", "icon": Icons.waves},
+//     {"name": "Carbon Dioxide", "icon": Icons.cloud},
+//     {"name": "Vacuum", "icon": Icons.arrow_upward},
+//     {"name": "Normal Air", "icon": Icons.brightness_1},
+//     {"name": "Air Bar 3", "icon": Icons.whatshot},
+//     {"name": "Air Bar 7", "icon": Icons.fireplace},
+//   ];
+
+//   @override
+//   void initState() {
+//     super.initState();
+//     _initializeDefaultGasStatus();
+//     _startEsp32Polling(); // Changed from _setupDataListener
+//   }
+
+//   @override
+//   void dispose() {
+//     _dataTimer?.cancel(); // Stop the timer when the widget is disposed
+//     super.dispose();
+//   }
+
+//   void _initializeDefaultGasStatus() {
+//     _gasStatusList = List.generate(
+//       7,
+//       (index) => GasStatus(
+//         name: _gasConfigs[index]["name"] as String,
+//         sensorNumber: index + 1,
+//         status: "WAITING DATA",
+//         color: Colors.orange,
+//         faultBit: -1,
+//         icon: _gasConfigs[index]["icon"] as IconData,
+//       ),
+//     );
+//   }
+
+//   // --- New functions for ESP32 ---
+//   void _startEsp32Polling() {
+//     _dataTimer?.cancel(); // Cancel any existing timer
+//     // Fetch data immediately and then every 2 seconds
+//     _fetchDataFromESP32();
+//     _dataTimer = Timer.periodic(Duration(seconds: 2), (timer) {
+//       _fetchDataFromESP32();
+//     });
+//   }
+
+//   Future<void> _fetchDataFromESP32() async {
+//     try {
+//       final response = await http
+//           .get(Uri.parse('$esp32BaseUrl/data'))
+//           .timeout(const Duration(seconds: 2));
+
+//       if (response.statusCode == 200) {
+//         if (mounted) {
+//           // We have data, parse it
+//           _parseGasData(response.body);
+//           setState(() {
+//             _esp32Status = "Connected";
+//           });
+//         }
+//       } else {
+//         throw Exception('Failed to load data');
+//       }
+//     } catch (e) {
+//       if (mounted) {
+//         print("ESP32 Fetch Error: $e");
+//         setState(() {
+//           _esp32Status = "Connection Failed";
+//         });
+//       }
+//     }
+//   }
+//   // --- End of new functions ---
+
+//   void _parseGasData(String rawData) {
+//     // This function is perfect as-is. No changes needed.
+//     try {
+//       String cleanData = rawData.replaceAll('{', '').replaceAll('}', '');
+//       List<String> pairs = cleanData.split(',');
+
+//       Map<String, String> dataMap = {};
+
+//       for (String pair in pairs) {
+//         if (pair.contains(':')) {
+//           List<String> keyValue = pair.split(':');
+//           if (keyValue.length == 2) {
+//             dataMap[keyValue[0].trim()] = keyValue[1].trim();
+//           }
+//         }
+//       }
+
+//       List<GasStatus> updatedList = [];
+//       for (int i = 1; i <= 7; i++) {
+//         String faultKey = 'F_Sensor_${i}_FAULT_BIT';
+//         String status;
+//         Color color;
+//         int faultBit = -1;
+
+//         if (dataMap.containsKey(faultKey)) {
+//           faultBit = int.tryParse(dataMap[faultKey]!) ?? 1;
+
+//           if (faultBit == 1) {
+//             status = "EMPTY";
+//             color = Colors.red;
+//           } else if (faultBit == 0) {
+//             status = "FULL";
+//             color = Colors.green;
+//           } else {
+//             status = "UNKNOWN";
+//             color = Colors.grey;
+//           }
+//         } else {
+//           status = "NO DATA";
+//           color = Colors.orange;
+//         }
+
+//         updatedList.add(
+//           GasStatus(
+//             name: _gasConfigs[i - 1]["name"] as String,
+//             sensorNumber: i,
+//             status: status,
+//             color: color,
+//             faultBit: faultBit,
+//             icon: _gasConfigs[i - 1]["icon"] as IconData,
+//           ),
+//         );
+//       }
+
+//       // Use 'mounted' check for safety
+//       if (mounted) {
+//         setState(() {
+//           _gasStatusList = updatedList;
+//         });
+//       }
+
+//       // Check and play alert dynamically
+//       _checkAndPlayAlert();
+//     } catch (e) {
+//       print('Error parsing gas data: $e');
+//     }
+//   }
+
+//   // This audio logic is unchanged and still uses GlobalUsbProvider as a service
+//   void _checkAndPlayAlert() {
+//     final globalUsbProvider = Provider.of<GlobalUsbProvider>(
+//       context,
+//       listen: false,
+//     );
+
+//     // Get all EMPTY gases
+//     List<GasStatus> emptyGases = _gasStatusList
+//         .where((gas) => gas.status == "EMPTY")
+//         .toList();
+
+//     if (emptyGases.isNotEmpty && !globalUsbProvider.isAlertPlaying) {
+//       globalUsbProvider.setAlertPlaying(true);
+//       _playLoopAlert(emptyGases);
+//     } else if (emptyGases.isEmpty && globalUsbProvider.isAlertPlaying) {
+//       globalUsbProvider.setAlertPlaying(false);
+//       globalUsbProvider.stopAudio();
+//     }
+//   }
+
+//   // This audio logic is unchanged
+//   Future<void> _playLoopAlert(List<GasStatus> emptyGases) async {
+//     final globalUsbProvider = Provider.of<GlobalUsbProvider>(
+//       context,
+//       listen: false,
+//     );
+
+//     Map<String, String> gasAudioMap = {
+//       'Oxygen': 'assets/audio/Oxygen.mp3',
+//       'Vacuum': 'assets/audio/VaccumError.mp3',
+//       'Carbon Dioxide': 'assets/audio/CO2.mp3',
+//       'Nitrogen': 'assets/audio/Nitrogen.mp3',
+//       'Air Bar 3': 'assets/audio/AirBar3.mp3',
+//       'Air Bar 7': 'assets/audio/AirBar7.mp3',
+//       'Normal Air': 'assets/audio/NormalAir.mp3',
+//     };
+
+//     List<String> alertFiles = emptyGases
+//         .map((gas) => gasAudioMap[gas.name])
+//         .whereType<String>()
+//         .toList();
+
+//     int index = 0;
+
+//     while (globalUsbProvider.isAlertPlaying && alertFiles.isNotEmpty) {
+//       String currentFile = alertFiles[index];
+//       await globalUsbProvider.audioPlayer.play(
+//         AssetSource(currentFile.replaceFirst('assets/', '')),
+//       );
+//       await globalUsbProvider.audioPlayer.onPlayerComplete.first;
+//       index = (index + 1) % alertFiles.length;
+//     }
+//   }
+
+//   @override
+//   Widget build(BuildContext context) {
+//     return Scaffold(
+//       appBar: AppBar(
+//         title: const Text('MGPS', style: TextStyle(color: Colors.white)),
+//         backgroundColor: const Color.fromARGB(255, 18, 39, 41),
+//         elevation: 0,
+//         iconTheme: const IconThemeData(
+//           color: Colors.white, // 👈 makes the back button white
+//         ),
+//         actions: [_buildConnectionStatus()], // This widget is now updated
+//       ),
+//       // The main Consumer<GlobalUsbProvider> is removed
+//       body: Container(
+//         decoration: BoxDecoration(
+//           gradient: LinearGradient(
+//             begin: Alignment.topCenter,
+//             end: Alignment.bottomCenter,
+//             colors: [
+//               Color.fromARGB(255, 18, 39, 41),
+//               Color.fromARGB(255, 25, 60, 63),
+//             ],
+//           ),
+//         ),
+//         child: Column(
+//           children: [
+//             // Status message from our new state variable
+//             if (_esp32Status != "Connected")
+//               Container(
+//                 width: double.infinity,
+//                 padding: EdgeInsets.all(8),
+//                 color: Colors.red.withOpacity(0.2),
+//                 child: Row(
+//                   mainAxisAlignment: MainAxisAlignment.center,
+//                   children: [
+//                     Icon(Icons.wifi_off, color: Colors.red, size: 16),
+//                     SizedBox(width: 8),
+//                     Text(
+//                       'ESP32: $_esp32Status', // Show ESP32 status
+//                       style: TextStyle(color: Colors.white),
+//                     ),
+//                   ],
+//                 ),
+//               ),
+//             Expanded(child: _buildGasGrid()),
+//           ],
+//         ),
+//       ),
+//     );
+//   }
+
+//   // Updated to use local state, no Consumer needed
+//   Widget _buildConnectionStatus() {
+//     bool isConnected = _esp32Status == "Connected";
+//     return Padding(
+//       padding: EdgeInsets.only(right: 16),
+//       child: Row(
+//         children: [
+//           Icon(
+//             isConnected ? Icons.wifi : Icons.wifi_off,
+//             color: isConnected
+//                 ? Colors.transparent
+//                 : Colors.red, // User's style
+//           ),
+//           SizedBox(width: 8),
+//         ],
+//       ),
+//     );
+//   }
+
+//   Widget _buildGasGrid() {
+//     return Padding(
+//       padding: const EdgeInsets.symmetric(horizontal: 16.0),
+//       child: GridView.builder(
+//         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+//           crossAxisCount: 4,
+//           crossAxisSpacing: 12,
+//           mainAxisSpacing: 12,
+//           childAspectRatio: 1.4,
+//         ),
+//         itemCount: _gasStatusList.length,
+//         itemBuilder: (context, index) {
+//           return _buildGasCard(_gasStatusList[index]);
+//         },
+//       ),
+//     );
+//   }
+
+//   Widget _buildGasCard(GasStatus gas) {
+//     return Card(
+//       color: const Color.fromARGB(29, 255, 255, 255),
+//       elevation: 6,
+//       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+//       child: Container(
+//         decoration: BoxDecoration(
+//           borderRadius: BorderRadius.circular(12),
+//           border: Border.all(color: gas.color.withOpacity(0.4), width: 3),
+//         ),
+//         child: Padding(
+//           padding: const EdgeInsets.all(12.0),
+//           child: Column(
+//             mainAxisAlignment: MainAxisAlignment.center,
+//             children: [
+//               Icon(gas.icon, size: 28, color: gas.color),
+//               SizedBox(height: 6),
+//               Text(
+//                 gas.name,
+//                 style: TextStyle(
+//                   fontSize: 14,
+//                   fontWeight: FontWeight.bold,
+//                   color: Colors.white,
+//                 ),
+//                 textAlign: TextAlign.center,
+//                 maxLines: 2,
+//               ),
+//               SizedBox(height: 4),
+//               Container(
+//                 padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+//                 decoration: BoxDecoration(
+//                   color: gas.color.withOpacity(0.1),
+//                   borderRadius: BorderRadius.circular(12),
+//                   border: Border.all(color: gas.color, width: 1),
+//                 ),
+//                 child: Text(
+//                   gas.status,
+//                   style: TextStyle(
+//                     color: Colors.white,
+//                     fontWeight: FontWeight.bold,
+//                     fontSize: 10,
+//                   ),
+//                 ),
+//               ),
+//               SizedBox(height: 2),
+//               Text(
+//                 'Sensor ${gas.sensorNumber}',
+//                 style: TextStyle(fontSize: 9, color: Colors.white),
+//               ),
+//             ],
+//           ),
+//         ),
+//       ),
+//     );
+//   }
+// }
+
+// class GasStatus {
+//   final String name;
+//   final int sensorNumber;
+//   final String status;
+//   final Color color;
+//   final int faultBit;
+//   final IconData icon;
+
+//   GasStatus({
+//     required this.name,
+//     required this.sensorNumber,
+//     required this.status,
+//     required this.color,
+//     required this.faultBit,
+//     required this.icon,
+//   });
+// }
+import 'dart:async';
 import 'dart:typed_data';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
-import 'package:surgeon_control_panel/provider/audioProvider.dart';
-import 'package:usb_serial/usb_serial.dart';
 import 'package:provider/provider.dart';
-// Import the AudioProvider
+import 'package:http/http.dart' as http;
+import 'package:surgeon_control_panel/services/usb_service.dart';
 
 class GasStatusPage extends StatefulWidget {
   @override
@@ -12,36 +395,51 @@ class GasStatusPage extends StatefulWidget {
 }
 
 class _GasStatusPageState extends State<GasStatusPage> {
-  List<UsbDevice> _devices = [];
-  UsbPort? _port;
-  bool _isConnected = false;
-  bool _isScanning = false;
-  String _receivedData = '';
-  String _statusMessage = 'Disconnected';
   List<GasStatus> _gasStatusList = [];
-  String _buffer = '';
+
+  // --- ESP32 Configuration ---
+  final String esp32BaseUrl = 'http://192.168.0.100:8080';
+  Timer? _dataTimer;
+  String _esp32Status = "Connecting...";
+  bool _useEsp32 =
+      false; // Start with false, will be determined by connection check
 
   // Gas configuration
   final List<Map<String, dynamic>> _gasConfigs = [
     {"name": "Oxygen", "icon": Icons.air},
     {"name": "Nitrogen", "icon": Icons.waves},
-    {"name": "Carbon Dioxide", "icon": Icons.cloud},
-    {"name": "Vacuum", "icon": Icons.arrow_upward},
-    {"name": "Normal Air", "icon": Icons.brightness_1},
-    {"name": "Air Bar 3", "icon": Icons.whatshot},
-    {"name": "Air Bar 7", "icon": Icons.fireplace},
+    // {"name": "Carbon Dioxide", "icon": Icons.cloud},
+    // {"name": "Vacuum", "icon": Icons.arrow_upward},
+    // {"name": "Normal Air", "icon": Icons.brightness_1},
+    // {"name": "Air Bar 3", "icon": Icons.whatshot},
+    // {"name": "Air Bar 7", "icon": Icons.fireplace},
   ];
 
   @override
   void initState() {
     super.initState();
     _initializeDefaultGasStatus();
-    _autoConnectToDevice();
+    _checkConnectionMethod();
+    _startDataPolling();
+  }
+
+  void _checkConnectionMethod() {
+    final usbProvider = Provider.of<GlobalUsbProvider>(context, listen: false);
+    setState(() {
+      _useEsp32 = !usbProvider.isConnected;
+    });
+    print("Connection Method: ${_useEsp32 ? 'ESP32' : 'USB'}");
+  }
+
+  @override
+  void dispose() {
+    _dataTimer?.cancel();
+    super.dispose();
   }
 
   void _initializeDefaultGasStatus() {
     _gasStatusList = List.generate(
-      7,
+      2,
       (index) => GasStatus(
         name: _gasConfigs[index]["name"] as String,
         sensorNumber: index + 1,
@@ -53,144 +451,130 @@ class _GasStatusPageState extends State<GasStatusPage> {
     );
   }
 
-  Future<void> _autoConnectToDevice() async {
+  void _startDataPolling() {
+    _dataTimer?.cancel();
+    _fetchData();
+    _dataTimer = Timer.periodic(Duration(seconds: 3), (timer) {
+      _fetchData();
+    });
+  }
+
+  Future<void> _fetchData() async {
+    if (_useEsp32) {
+      await _fetchDataFromESP32();
+    } else {
+      await _fetchDataFromUSB();
+    }
+  }
+
+  Future<void> _fetchDataFromESP32() async {
     try {
-      setState(() {
-        _isScanning = true;
-        _statusMessage = 'Scanning for USB devices...';
-      });
+      final response = await http
+          .get(Uri.parse('$esp32BaseUrl/data'))
+          .timeout(const Duration(seconds: 2));
 
-      List<UsbDevice> devices = await UsbSerial.listDevices();
-
-      setState(() {
-        _devices = devices;
-        _isScanning = false;
-      });
-
-      if (devices.isNotEmpty) {
-        _statusMessage =
-            'Found ${devices.length} device(s). Connecting to ${devices.first.deviceName}...';
-        bool connected = await _connectToDevice(devices.first);
-
-        if (connected) {
+      if (response.statusCode == 200) {
+        if (mounted) {
+          _parseGasData(response.body);
           setState(() {
-            _statusMessage =
-                "Automatically connected to ${devices.first.deviceName}";
-          });
-        } else {
-          setState(() {
-            _statusMessage =
-                "Failed to auto-connect to ${devices.first.deviceName}";
+            _esp32Status = "Connected";
           });
         }
       } else {
-        setState(() {
-          _statusMessage = 'No USB devices found';
-        });
+        throw Exception('Failed to load data');
       }
     } catch (e) {
-      setState(() {
-        _isScanning = false;
-        _statusMessage = 'Auto-connect failed: $e';
-      });
+      if (mounted) {
+        print("ESP32 Fetch Error: $e");
+        setState(() {
+          _esp32Status = "Connection Failed";
+        });
+      }
     }
   }
 
-  Future<void> _scanDevices() async {
+  Future<void> _fetchDataFromUSB() async {
     try {
-      setState(() {
-        _isScanning = true;
-        _statusMessage = 'Scanning for USB devices...';
-      });
-
-      List<UsbDevice> devices = await UsbSerial.listDevices();
-      setState(() {
-        _devices = devices;
-        _isScanning = false;
-        _statusMessage = 'Found ${devices.length} USB device(s)';
-      });
-
-      if (devices.isNotEmpty && !_isConnected) {
-        _statusMessage = 'Auto-connecting to ${devices.first.deviceName}...';
-        bool connected = await _connectToDevice(devices.first);
-
-        if (connected) {
-          setState(() {
-            _statusMessage =
-                "Automatically connected to ${devices.first.deviceName}";
-          });
-        }
-      }
-    } catch (e) {
-      setState(() {
-        _isScanning = false;
-        _statusMessage = 'Failed to scan devices: $e';
-      });
-    }
-  }
-
-  Future<bool> _connectToDevice(UsbDevice device) async {
-    try {
-      _port = await device.create();
-
-      if (await _port!.open() != true) {
-        setState(() {
-          _statusMessage = "Failed to open port";
-        });
-        return false;
-      }
-
-      await _port!.setDTR(true);
-      await _port!.setRTS(true);
-      await _port!.setPortParameters(
-        9600,
-        8,
-        UsbPort.STOPBITS_1,
-        UsbPort.PARITY_NONE,
+      final usbProvider = Provider.of<GlobalUsbProvider>(
+        context,
+        listen: false,
       );
 
-      setState(() {
-        _isConnected = true;
-        _statusMessage = "Connected to ${device.deviceName}";
-        _buffer = '';
-      });
+      // Request gas sensor data from USB
+      usbProvider.sendCompleteStructure();
 
-      _port!.inputStream!.listen(_onDataReceived);
-
-      return true;
+      // Simulate parsing USB data - you'll need to replace this with actual USB data parsing
+      // For now, we'll create mock data to show it's working
+      _parseUSBGasData();
     } catch (e) {
-      setState(() {
-        _statusMessage = "Failed to connect: $e";
-      });
-      return false;
+      print("USB Fetch Error: $e");
+      if (mounted) {
+        setState(() {
+          // Optionally fall back to ESP32 if USB fails
+          _useEsp32 = true;
+          _esp32Status = "USB Failed, switching to ESP32";
+        });
+      }
     }
   }
 
-  void _onDataReceived(Uint8List data) {
-    String newData = String.fromCharCodes(data);
+  void _parseUSBGasData() {
+    try {
+      // TODO: Replace this with actual USB data parsing from your GlobalUsbProvider
+      // For now, creating mock data to demonstrate USB functionality
 
-    setState(() {
-      _buffer += newData;
-      _receivedData = _buffer;
-    });
+      List<GasStatus> updatedList = [];
+      for (int i = 1; i <= _gasConfigs.length; i++) {
+        String status;
+        Color color;
+        int faultBit;
 
-    if (_buffer.contains('}')) {
-      int lastCompleteIndex = _buffer.lastIndexOf('}');
-      if (lastCompleteIndex != -1) {
-        String completeMessage = _buffer.substring(0, lastCompleteIndex + 1);
+        // Mock data - replace with actual USB data
+        // Simulating random status for demonstration
+        if (i == 1) {
+          status = "FULL";
+          color = Colors.green;
+          faultBit = 0;
+        } else {
+          status = "EMPTY";
+          color = Colors.red;
+          faultBit = 1;
+        }
 
-        _parseGasData(completeMessage);
+        updatedList.add(
+          GasStatus(
+            name: _gasConfigs[i - 1]["name"] as String,
+            sensorNumber: i,
+            status: status,
+            color: color,
+            faultBit: faultBit,
+            icon: _gasConfigs[i - 1]["icon"] as IconData,
+          ),
+        );
+      }
 
+      if (mounted) {
         setState(() {
-          _buffer = _buffer.substring(lastCompleteIndex + 1);
+          _gasStatusList = updatedList;
         });
       }
+
+      _checkAndPlayAlert();
+
+      print("USB Data Parsed Successfully");
+    } catch (e) {
+      print('Error parsing USB gas data: $e');
     }
   }
 
   void _parseGasData(String rawData) {
     try {
-      String cleanData = rawData.replaceAll('{', '').replaceAll('}', '');
+      // Handle both JSON and key-value format
+      String cleanData = rawData;
+      if (rawData.startsWith('{') && rawData.endsWith('}')) {
+        cleanData = rawData.substring(1, rawData.length - 1);
+      }
+
       List<String> pairs = cleanData.split(',');
 
       Map<String, String> dataMap = {};
@@ -205,7 +589,7 @@ class _GasStatusPageState extends State<GasStatusPage> {
       }
 
       List<GasStatus> updatedList = [];
-      for (int i = 1; i <= 7; i++) {
+      for (int i = 1; i <= _gasConfigs.length; i++) {
         String faultKey = 'F_Sensor_${i}_FAULT_BIT';
         String status;
         Color color;
@@ -241,40 +625,44 @@ class _GasStatusPageState extends State<GasStatusPage> {
         );
       }
 
-      setState(() {
-        _gasStatusList = updatedList;
-        _statusMessage =
-            "Data updated - ${DateTime.now().toString().substring(11, 19)}";
-      });
+      if (mounted) {
+        setState(() {
+          _gasStatusList = updatedList;
+        });
+      }
 
-      // Check and play alert dynamically
       _checkAndPlayAlert();
     } catch (e) {
-      print('Error parsing data: $e');
-      setState(() {
-        _statusMessage = "Error parsing data: $e";
-      });
+      print('Error parsing gas data: $e');
     }
   }
 
+  // Audio alert logic - uses GlobalUsbProvider for audio only
   void _checkAndPlayAlert() {
-    final audioProvider = Provider.of<AudioProvider>(context, listen: false);
-    // Get all EMPTY gases
+    final globalUsbProvider = Provider.of<GlobalUsbProvider>(
+      context,
+      listen: false,
+    );
+
     List<GasStatus> emptyGases = _gasStatusList
         .where((gas) => gas.status == "EMPTY")
         .toList();
 
-    if (emptyGases.isNotEmpty && !audioProvider.isAlertPlaying) {
-      audioProvider.setAlertPlaying(true);
+    if (emptyGases.isNotEmpty && !globalUsbProvider.isAlertPlaying) {
+      globalUsbProvider.setAlertPlaying(true);
       _playLoopAlert(emptyGases);
-    } else if (emptyGases.isEmpty && audioProvider.isAlertPlaying) {
-      audioProvider.setAlertPlaying(false);
-      audioProvider.stopAudio();
+    } else if (emptyGases.isEmpty && globalUsbProvider.isAlertPlaying) {
+      globalUsbProvider.setAlertPlaying(false);
+      globalUsbProvider.stopAudio();
     }
   }
 
   Future<void> _playLoopAlert(List<GasStatus> emptyGases) async {
-    final audioProvider = Provider.of<AudioProvider>(context, listen: false);
+    final globalUsbProvider = Provider.of<GlobalUsbProvider>(
+      context,
+      listen: false,
+    );
+
     Map<String, String> gasAudioMap = {
       'Oxygen': 'assets/audio/Oxygen.mp3',
       'Vacuum': 'assets/audio/VaccumError.mp3',
@@ -292,53 +680,76 @@ class _GasStatusPageState extends State<GasStatusPage> {
 
     int index = 0;
 
-    while (audioProvider.isAlertPlaying && alertFiles.isNotEmpty) {
+    while (globalUsbProvider.isAlertPlaying && alertFiles.isNotEmpty) {
       String currentFile = alertFiles[index];
-      await audioProvider.audioPlayer.play(
+      await globalUsbProvider.audioPlayer.play(
         AssetSource(currentFile.replaceFirst('assets/', '')),
       );
-      await audioProvider.audioPlayer.onPlayerComplete.first;
+      await globalUsbProvider.audioPlayer.onPlayerComplete.first;
       index = (index + 1) % alertFiles.length;
     }
   }
 
-  Future<void> _disconnect() async {
-    try {
-      await _port?.close();
-      final audioProvider = Provider.of<AudioProvider>(context, listen: false);
-      if (audioProvider.isAlertPlaying) {
-        audioProvider.setAlertPlaying(false);
-        await audioProvider.stopAudio();
-      }
+  // Manual refresh method
+  Future<void> _manualRefresh() async {
+    if (_useEsp32) {
       setState(() {
-        _port = null;
-        _isConnected = false;
-        _statusMessage = "Disconnected";
-        _receivedData = '';
-        _buffer = '';
-        _initializeDefaultGasStatus();
+        _esp32Status = "Refreshing...";
       });
-    } catch (e) {
-      setState(() {
-        _statusMessage = "Failed to disconnect: $e";
-      });
+      await _fetchDataFromESP32();
+      _showSuccessSnackbar("ESP32 data refreshed");
+    } else {
+      await _fetchDataFromUSB();
+      _showSuccessSnackbar("USB data refreshed");
     }
   }
 
-  @override
-  void dispose() {
-    _port?.close();
-    super.dispose();
+  void _showSuccessSnackbar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.green,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  void _showErrorSnackbar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red,
+        duration: const Duration(seconds: 3),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final usbProvider = Provider.of<GlobalUsbProvider>(context);
+
+    // Update connection method based on current USB status
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_useEsp32 != !usbProvider.isConnected) {
+        _checkConnectionMethod();
+        _startDataPolling();
+      }
+    });
+
     return Scaffold(
       appBar: AppBar(
-        title: Text('MGPS', style: TextStyle(color: Colors.white)),
-        backgroundColor: Color.fromARGB(255, 18, 39, 41),
+        title: const Text('MGPS', style: TextStyle(color: Colors.white)),
+        backgroundColor: const Color.fromARGB(255, 18, 39, 41),
         elevation: 0,
-        actions: [_buildConnectionStatus(), _buildUsbMenu()],
+        iconTheme: const IconThemeData(color: Colors.white),
+        actions: [
+          _buildConnectionStatus(usbProvider),
+          IconButton(
+            icon: Icon(Icons.refresh, color: Colors.white),
+            onPressed: _manualRefresh,
+            tooltip: "Refresh Data",
+          ),
+        ],
       ),
       body: Container(
         decoration: BoxDecoration(
@@ -353,7 +764,42 @@ class _GasStatusPageState extends State<GasStatusPage> {
         ),
         child: Column(
           children: [
-            if (!_isConnected && _devices.isNotEmpty) _buildDeviceList(),
+            // Connection status banner
+            if (_esp32Status != "Connected" && _useEsp32)
+              Container(
+                width: double.infinity,
+                padding: EdgeInsets.all(8),
+                color: Colors.red.withOpacity(0.2),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.wifi_off, color: Colors.red, size: 16),
+                    SizedBox(width: 8),
+                    Text(
+                      'ESP32: $_esp32Status',
+                      style: TextStyle(color: Colors.white),
+                    ),
+                  ],
+                ),
+              ),
+            // USB connection banner
+            if (!_useEsp32)
+              Container(
+                width: double.infinity,
+                padding: EdgeInsets.all(8),
+                color: Colors.green.withOpacity(0.2),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.usb, color: Colors.green, size: 16),
+                    SizedBox(width: 8),
+                    Text(
+                      'Using USB Connection',
+                      style: TextStyle(color: Colors.white),
+                    ),
+                  ],
+                ),
+              ),
             Expanded(child: _buildGasGrid()),
           ],
         ),
@@ -361,114 +807,39 @@ class _GasStatusPageState extends State<GasStatusPage> {
     );
   }
 
-  Widget _buildConnectionStatus() {
+  Widget _buildConnectionStatus(GlobalUsbProvider usbProvider) {
+    bool isConnected = _useEsp32
+        ? _esp32Status == "Connected"
+        : usbProvider.isConnected;
+    Color statusColor = isConnected ? Colors.green : Colors.red;
+    IconData statusIcon = _useEsp32
+        ? (isConnected ? Icons.wifi : Icons.wifi_off)
+        : (isConnected ? Icons.usb : Icons.usb_off);
+
     return Padding(
-      padding: EdgeInsets.only(right: 16),
+      padding: EdgeInsets.only(right: 8),
       child: Row(
         children: [
-          Icon(
-            _isConnected ? Icons.usb : Icons.usb_off,
-            color: _isConnected ? Colors.green : Colors.red,
-          ),
-          SizedBox(width: 8),
-          Text(
-            _isConnected ? 'Connected' : 'Disconnected',
-            style: TextStyle(
-              color: _isConnected ? Colors.green : Colors.red,
-              fontSize: 12,
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: statusColor.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: statusColor, width: 1),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildUsbMenu() {
-    return PopupMenuButton<String>(
-      onSelected: (value) {
-        if (value == 'scan') {
-          _scanDevices();
-        } else if (value == 'disconnect') {
-          _disconnect();
-        } else if (value == 'auto_connect') {
-          _autoConnectToDevice();
-        }
-      },
-      itemBuilder: (BuildContext context) => [
-        PopupMenuItem(
-          value: 'scan',
-          child: Row(
-            children: [
-              Icon(Icons.refresh),
-              SizedBox(width: 8),
-              Text('Scan Devices'),
-            ],
-          ),
-        ),
-        PopupMenuItem(
-          value: 'auto_connect',
-          child: Row(
-            children: [
-              Icon(Icons.usb, color: Colors.green),
-              SizedBox(width: 8),
-              Text('Auto Connect'),
-            ],
-          ),
-        ),
-        if (_isConnected)
-          PopupMenuItem(
-            value: 'disconnect',
             child: Row(
               children: [
-                Icon(Icons.usb_off, color: Colors.red),
-                SizedBox(width: 8),
-                Text('Disconnect'),
-              ],
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _buildDeviceList() {
-    return Container(
-      height: 120,
-      padding: EdgeInsets.all(8),
-      color: Colors.black.withOpacity(0.1),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Available USB Devices:',
-            style: TextStyle(
-              color: const Color.fromARGB(68, 255, 255, 255),
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          SizedBox(height: 4),
-          Expanded(
-            child: ListView.builder(
-              itemCount: _devices.length,
-              itemBuilder: (context, index) {
-                return Card(
-                  margin: EdgeInsets.symmetric(vertical: 2),
-                  child: ListTile(
-                    leading: Icon(Icons.usb),
-                    title: Text(
-                      _devices[index].deviceName ?? 'Unknown Device',
-                      style: TextStyle(fontSize: 14),
-                    ),
-                    subtitle: Text(
-                      'PID: ${_devices[index].pid}',
-                      style: TextStyle(fontSize: 12),
-                    ),
-                    dense: true,
-                    onTap: () {
-                      _connectToDevice(_devices[index]);
-                    },
+                Icon(statusIcon, color: statusColor, size: 16),
+                SizedBox(width: 4),
+                Text(
+                  _useEsp32 ? "ESP32" : "USB",
+                  style: TextStyle(
+                    color: statusColor,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
                   ),
-                );
-              },
+                ),
+              ],
             ),
           ),
         ],

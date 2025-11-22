@@ -1,4 +1,49 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- CH340/CH341 Devices -->
     <usb-device vendor-id="6790" product-id="29987" />
+    <usb-device vendor-id="6790" product-id="29986" />
+    <usb-device vendor-id="6790" product-id="29985" />
+    
+    <!-- CH343 Devices -->
+    <usb-device vendor-id="6790" product-id="29989" />
+    <usb-device vendor-id="6790" product-id="29990" />
+    <usb-device vendor-id="6790" product-id="29991" />
+    <usb-device vendor-id="6790" product-id="29992" />
+    <usb-device vendor-id="6790" product-id="29993" />
+    <usb-device vendor-id="6790" product-id="29994" />
+    <usb-device vendor-id="6790" product-id="29995" />
+    <usb-device vendor-id="6790" product-id="29996" />
+    
+    <!-- FTDI Devices -->
+    <usb-device vendor-id="1027" product-id="24577" />
+    <usb-device vendor-id="1027" product-id="24592" />
+    <usb-device vendor-id="1027" product-id="24596" />
+    <usb-device vendor-id="1027" product-id="24600" />
+    <usb-device vendor-id="1027" product-id="24597" />
+    <usb-device vendor-id="1027" product-id="24593" />
+    <usb-device vendor-id="1027" product-id="24606" />
+    
+    <!-- Prolific Devices -->
+    <usb-device vendor-id="1659" product-id="8963" />
+    <usb-device vendor-id="1659" product-id="36880" />
+    
+    <!-- CP210x Devices -->
+    <usb-device vendor-id="4292" product-id="60000" />
+    <usb-device vendor-id="4292" product-id="60001" />
+    <usb-device vendor-id="4292" product-id="60016" />
+    <usb-device vendor-id="4292" product-id="60017" />
+    <usb-device vendor-id="4292" product-id="60018" />
+    
+    <!-- Arduino Devices -->
+    <usb-device vendor-id="9025" product-id="66" />
+    <usb-device vendor-id="9025" product-id="67" />
+    <usb-device vendor-id="10755" product-id="67" />
+    
+    <!-- Additional common USB-Serial chips -->
+    <usb-device vendor-id="5824" product-id="1503" />
+    <usb-device vendor-id="8564" product-id="32773" />
+    
+    <!-- Silicon Labs -->
+    <usb-device vendor-id="4292" product-id="60000" />
 </resources>
