@@ -253,7 +253,7 @@ class _HomeState extends State<Home> with SingleTickerProviderStateMixin {
         break;
       case 9: // PIS
         Get.to(
-          () => DashboardScreen(),
+          () => Scaffold(),
           transition: Transition.rightToLeft,
           duration: const Duration(milliseconds: 400),
         );

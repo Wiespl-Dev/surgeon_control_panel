@@ -72,6 +72,7 @@ dependencies:
   fl_chart: ^1.0.0
   android_intent_plus: ^5.3.1
   url_launcher: ^6.3.2
+  open_filex: ^4.7.0
   # image_gallery_saver: ^2.0.3
   # gallery_saver: ^2.3.2
 
